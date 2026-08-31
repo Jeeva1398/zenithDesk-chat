@@ -5,7 +5,7 @@ const AppError = require('../utils/AppError');
 const sendMessage = catchAsync(async (req, res) => {
   const { sessionId, message } = req.body;
 
-  if (!sessionId || typeof message !== 'string' || !message.trim()) {
+  if (typeof sessionId !== 'string' || !sessionId.trim() || typeof message !== 'string' || !message.trim()) {
     throw new AppError('sessionId and message are required', 400);
   }
 

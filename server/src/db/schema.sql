@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   missing_fields TEXT,
   customer_context TEXT,
   ticket_id TEXT,
+  awaiting_contact INTEGER,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   confirmed_at DATETIME

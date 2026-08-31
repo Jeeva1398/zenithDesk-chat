@@ -10,25 +10,35 @@ const PRIORITY_KEYWORDS = {
   low: ['whenever', 'low priority', 'no rush'],
 };
 
-function matchKeyword(text, keywordMap, fallback) {
+function matchKeyword(text, keywordMap) {
   for (const [key, words] of Object.entries(keywordMap)) {
     if (words.some((word) => text.includes(word))) return key;
   }
-  return fallback;
+  return null;
 }
 
+// Only report a field as known when a keyword actually matched - defaulting
+// unmatched category/priority to 'general'/'medium' would make every fallback
+// classification look complete, silently skipping the follow-up question the
+// LLM path would have asked and letting under-specified tickets through.
 function classify(history) {
   const lastUserMessage = [...history].reverse().find((entry) => entry.role === 'user');
   const text = (lastUserMessage?.content || '').trim();
   const lower = text.toLowerCase();
 
+  const category = matchKeyword(lower, CATEGORY_KEYWORDS);
+  const priority = matchKeyword(lower, PRIORITY_KEYWORDS);
+  const missingFields = [];
+  if (!category) missingFields.push('category');
+  if (!priority) missingFields.push('priority');
+
   return {
-    category: matchKeyword(lower, CATEGORY_KEYWORDS, 'general'),
-    priority: matchKeyword(lower, PRIORITY_KEYWORDS, 'medium'),
+    category,
+    priority,
     summary: text ? text.slice(0, 120) : null,
     description: text || null,
     needs_more_info: true,
-    missing_fields: [],
+    missing_fields: missingFields,
   };
 }
 

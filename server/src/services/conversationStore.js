@@ -32,8 +32,17 @@ function getKnownFields(sessionId) {
 
 function getConversationSummary(sessionId) {
   return db
-    .prepare('SELECT status, ticket_id, category, priority, summary, description FROM conversations WHERE session_id = ?')
+    .prepare(
+      'SELECT status, ticket_id, category, priority, summary, description, awaiting_contact FROM conversations WHERE session_id = ?',
+    )
     .get(sessionId);
+}
+
+function setAwaitingContact(sessionId, value) {
+  db.prepare('UPDATE conversations SET awaiting_contact = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ?').run(
+    value ? 1 : 0,
+    sessionId,
+  );
 }
 
 // Merges the latest extraction pass into the conversation's accumulated state
@@ -88,4 +97,5 @@ module.exports = {
   getConversationSummary,
   mergeExtractedFields,
   markConfirmed,
+  setAwaitingContact,
 };

@@ -24,6 +24,7 @@ const NEW_CONVERSATION_COLUMNS = {
   customer_context: 'TEXT',
   ticket_id: 'TEXT',
   confirmed_at: 'DATETIME',
+  awaiting_contact: 'INTEGER',
 };
 
 const existingColumns = new Set(db.prepare('PRAGMA table_info(conversations)').all().map((col) => col.name));
