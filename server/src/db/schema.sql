@@ -10,6 +10,11 @@ CREATE TABLE IF NOT EXISTS conversations (
   customer_context TEXT,
   ticket_id TEXT,
   awaiting_contact INTEGER,
+  lookup_state TEXT,
+  customer_email TEXT,
+  customer_jwt TEXT,
+  customer_jwt_expires_at DATETIME,
+  last_shown_ticket_ids TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   confirmed_at DATETIME

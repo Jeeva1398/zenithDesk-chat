@@ -33,7 +33,9 @@ function getKnownFields(sessionId) {
 function getConversationSummary(sessionId) {
   return db
     .prepare(
-      'SELECT status, ticket_id, category, priority, summary, description, awaiting_contact FROM conversations WHERE session_id = ?',
+      `SELECT status, ticket_id, category, priority, summary, description, needs_more_info, awaiting_contact,
+              lookup_state, customer_email, customer_jwt, customer_jwt_expires_at, last_shown_ticket_ids
+       FROM conversations WHERE session_id = ?`,
     )
     .get(sessionId);
 }
@@ -88,6 +90,45 @@ function markConfirmed(sessionId, ticketId) {
   ).run(String(ticketId), sessionId);
 }
 
+function setLookupState(sessionId, state) {
+  db.prepare('UPDATE conversations SET lookup_state = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ?').run(
+    state,
+    sessionId,
+  );
+}
+
+function setCustomerEmail(sessionId, email) {
+  db.prepare('UPDATE conversations SET customer_email = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ?').run(
+    email,
+    sessionId,
+  );
+}
+
+function setCustomerAuth(sessionId, customerJwt, expiresAt) {
+  db.prepare(
+    `UPDATE conversations
+     SET customer_jwt = ?, customer_jwt_expires_at = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE session_id = ?`,
+  ).run(customerJwt, expiresAt, sessionId);
+}
+
+function setLastShownTicketIds(sessionId, ticketIds) {
+  db.prepare(
+    'UPDATE conversations SET last_shown_ticket_ids = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ?',
+  ).run(JSON.stringify(ticketIds), sessionId);
+}
+
+// Ends the status-lookup flow entirely (expired session, too many failed OTP
+// attempts) so the next message re-enters via the intent router from scratch.
+function clearLookupState(sessionId) {
+  db.prepare(
+    `UPDATE conversations
+     SET lookup_state = NULL, customer_email = NULL, customer_jwt = NULL,
+         customer_jwt_expires_at = NULL, last_shown_ticket_ids = NULL, updated_at = CURRENT_TIMESTAMP
+     WHERE session_id = ?`,
+  ).run(sessionId);
+}
+
 module.exports = {
   getOrCreateConversation,
   appendMessage,
@@ -98,4 +139,9 @@ module.exports = {
   mergeExtractedFields,
   markConfirmed,
   setAwaitingContact,
+  setLookupState,
+  setCustomerEmail,
+  setCustomerAuth,
+  setLastShownTicketIds,
+  clearLookupState,
 };

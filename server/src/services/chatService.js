@@ -1,6 +1,9 @@
 const extractionService = require('./extractionService');
 const conversationStore = require('./conversationStore');
 const ticketApiClient = require('./ticketApiClient');
+const intentRouter = require('./intentRouter');
+const ticketStatusFlow = require('./ticketStatusFlow');
+const { EMAIL_PATTERN } = require('../utils/emailPattern');
 const logger = require('../utils/logger');
 
 const FOLLOW_UP_QUESTIONS = {
@@ -13,8 +16,17 @@ const FOLLOW_UP_QUESTIONS = {
 const CONTACT_REQUEST = 'Almost done — could you share your name and an email address so we can send you updates on this ticket?';
 const CONTACT_RETRY = "That didn't include a valid email — could you share your name and an email address?";
 const TICKET_SUBMIT_FAILED = "Sorry, I wasn't able to submit your ticket just now — please try again in a moment.";
+const GREETING_REPLY =
+  "Hi! I'm the ZenithDesk assistant — tell me what's going on and I'll get a support ticket started, or ask me to check on an existing ticket.";
 
-const EMAIL_PATTERN = /[^\s<>()]+@[^\s<>()]+\.[^\s<>()]+/;
+// Matches only a bare greeting with nothing else in the message, so a real
+// description that happens to start with "hi" (e.g. "hi, my invoice is
+// wrong") still falls through to normal intent classification/extraction.
+const GREETING_PATTERN = /^(hi|hello|hey|hiya|yo|sup|greetings|good\s?(morning|afternoon|evening))[!.,\s]*$/i;
+
+function isBareGreeting(message) {
+  return GREETING_PATTERN.test(message.trim());
+}
 
 function buildFollowUpQuestion(missingFields) {
   const field = missingFields[0];
@@ -26,7 +38,7 @@ function parseContactInfo(message) {
   if (!emailMatch) return null;
 
   const email = emailMatch[0].replace(/[,.;]+$/, '');
-  const name = message.replace(emailMatch[0], '').replace(/[,\-]+/g, ' ').trim();
+  const name = message.replace(emailMatch[0], '').replace(/[,-]+/g, ' ').trim();
 
   return { customerName: name || 'ZenithDesk chat customer', customerEmail: email };
 }
@@ -76,6 +88,32 @@ async function sendMessage(sessionId, message) {
 
   if (existing.awaiting_contact) {
     return submitTicket(sessionId, { ...existing, pendingContactMessage: message });
+  }
+
+  if (existing.lookup_state) {
+    return ticketStatusFlow.handle(sessionId, message, existing);
+  }
+
+  // needs_more_info is NULL until the first extraction pass runs, so this is
+  // true only on the very first turn — once a ticket-creation attempt has
+  // started, later single-word replies (e.g. "account") must never be
+  // re-classified as a fresh intent, or they can hijack the flow into
+  // ticket-status lookup mid-conversation.
+  const conversationAlreadyStarted =
+    existing.needs_more_info != null ||
+    ['category', 'priority', 'summary', 'description'].some((field) => existing[field] != null);
+
+  if (!conversationAlreadyStarted && isBareGreeting(message)) {
+    conversationStore.appendMessage(sessionId, 'assistant', GREETING_REPLY);
+    conversationStore.touchConversation(sessionId);
+    return GREETING_REPLY;
+  }
+
+  if (!conversationAlreadyStarted) {
+    const intent = await intentRouter.classifyIntent(message);
+    if (intent === 'check_status') {
+      return ticketStatusFlow.start(sessionId);
+    }
   }
 
   const history = conversationStore.getHistory(sessionId);
