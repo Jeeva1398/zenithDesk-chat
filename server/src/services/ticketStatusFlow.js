@@ -43,7 +43,7 @@ async function start(sessionId) {
   return reply(sessionId, ASK_EMAIL);
 }
 
-async function handleAwaitingEmail(sessionId, message) {
+async function handleAwaitingEmail(sessionId, message, clientIp) {
   const emailMatch = message.match(EMAIL_PATTERN);
   if (!emailMatch) {
     return reply(sessionId, ASK_EMAIL_RETRY);
@@ -51,7 +51,7 @@ async function handleAwaitingEmail(sessionId, message) {
   const email = emailMatch[0].replace(/[,.;]+$/, '');
 
   try {
-    await otpService.requestOtp(email);
+    await otpService.requestOtp(email, clientIp);
   } catch (err) {
     logger.warn(`OTP request failed: ${err.message}`);
     return reply(sessionId, err.statusCode === 429 ? OTP_RATE_LIMITED : OTP_REQUEST_FAILED);
@@ -62,7 +62,7 @@ async function handleAwaitingEmail(sessionId, message) {
   return reply(sessionId, OTP_SENT.replace('{email}', email));
 }
 
-async function handleAwaitingCode(sessionId, message, conversation) {
+async function handleAwaitingCode(sessionId, message, conversation, clientIp) {
   const codeMatch = message.match(CODE_PATTERN);
   if (!codeMatch) {
     return reply(sessionId, CODE_RETRY);
@@ -70,7 +70,7 @@ async function handleAwaitingCode(sessionId, message, conversation) {
 
   let token;
   try {
-    ({ token } = await otpService.verifyOtp(conversation.customer_email, codeMatch[0]));
+    ({ token } = await otpService.verifyOtp(conversation.customer_email, codeMatch[0], clientIp));
   } catch (err) {
     if (err.statusCode === 429) {
       conversationStore.clearLookupState(sessionId);
@@ -129,12 +129,12 @@ async function handleVerified(sessionId, message, conversation) {
   }
 }
 
-async function handle(sessionId, message, conversation) {
+async function handle(sessionId, message, conversation, clientIp) {
   switch (conversation.lookup_state) {
     case 'awaiting_otp_email':
-      return handleAwaitingEmail(sessionId, message);
+      return handleAwaitingEmail(sessionId, message, clientIp);
     case 'awaiting_otp_code':
-      return handleAwaitingCode(sessionId, message, conversation);
+      return handleAwaitingCode(sessionId, message, conversation, clientIp);
     case 'verified_lookup':
       return handleVerified(sessionId, message, conversation);
     default:

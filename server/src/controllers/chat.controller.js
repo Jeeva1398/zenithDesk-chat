@@ -9,7 +9,7 @@ const sendMessage = catchAsync(async (req, res) => {
     throw new AppError('sessionId and message are required', 400);
   }
 
-  const reply = await chatService.sendMessage(sessionId, message);
+  const reply = await chatService.sendMessage(sessionId, message, req.ip);
   res.json({ reply });
 });
 

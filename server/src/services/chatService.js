@@ -74,7 +74,7 @@ async function submitTicket(sessionId, conversation) {
   return reply;
 }
 
-async function sendMessage(sessionId, message) {
+async function sendMessage(sessionId, message, clientIp) {
   conversationStore.getOrCreateConversation(sessionId);
   conversationStore.appendMessage(sessionId, 'user', message);
 
@@ -91,7 +91,7 @@ async function sendMessage(sessionId, message) {
   }
 
   if (existing.lookup_state) {
-    return ticketStatusFlow.handle(sessionId, message, existing);
+    return ticketStatusFlow.handle(sessionId, message, existing, clientIp);
   }
 
   // needs_more_info is NULL until the first extraction pass runs, so this is
