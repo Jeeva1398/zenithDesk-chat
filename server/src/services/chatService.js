@@ -3,6 +3,7 @@ const conversationStore = require('./conversationStore');
 const ticketApiClient = require('./ticketApiClient');
 const intentRouter = require('./intentRouter');
 const ticketStatusFlow = require('./ticketStatusFlow');
+const attachmentService = require('./attachmentService');
 const { EMAIL_PATTERN } = require('../utils/emailPattern');
 const logger = require('../utils/logger');
 
@@ -63,6 +64,11 @@ async function submitTicket(sessionId, conversation) {
     });
     conversationStore.setAwaitingContact(sessionId, false);
     conversationStore.markConfirmed(sessionId, ticket.id);
+    // Awaited so the files are on the ticket by the time an agent opens it.
+    // A failure is logged inside and never un-does the ticket.
+    await attachmentService
+      .forwardPending(sessionId, ticket.id)
+      .catch((err) => logger.warn(`Forwarding attachments for session ${sessionId} failed: ${err.message}`));
     reply = `Thanks — I've created ticket #${ticket.id} for you: "${conversation.summary}". Our team will follow up shortly.`;
   } catch (err) {
     logger.warn(`Ticket API call failed: ${err.message}`);
@@ -74,8 +80,9 @@ async function submitTicket(sessionId, conversation) {
   return reply;
 }
 
-async function sendMessage(sessionId, message, clientIp) {
+async function sendMessage(sessionId, message, clientIp, widgetKey) {
   conversationStore.getOrCreateConversation(sessionId);
+  conversationStore.bindWidget(sessionId, widgetKey);
   conversationStore.appendMessage(sessionId, 'user', message);
 
   const existing = conversationStore.getConversationSummary(sessionId);

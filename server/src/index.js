@@ -1,5 +1,7 @@
 require('dotenv').config();
 
+const path = require('path');
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -9,6 +11,7 @@ const AppError = require('./utils/AppError');
 require('./db/connection');
 const { pingOllama } = require('./services/ollamaClient');
 const chatRoutes = require('./routes/chat.routes');
+const { startPurgeSchedule } = require('./services/attachmentService');
 const errorHandler = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
 
@@ -53,11 +56,28 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
+// The widget bundle, served from here so the embed snippet needs one URL and
+// the widget can find its API from the address it was loaded from. Helmet's
+// default Cross-Origin-Resource-Policy (same-origin) would stop any other site
+// running it, which is the one thing this file is for.
+const WIDGET_BUNDLE_PATH = path.resolve(
+  process.env.WIDGET_BUNDLE_PATH || path.join(__dirname, '..', '..', 'client', 'dist', 'widget.js'),
+);
+app.get('/widget.js', (req, res, next) => {
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.set('Cache-Control', 'public, max-age=300');
+  res.type('application/javascript');
+  res.sendFile(WIDGET_BUNDLE_PATH, { dotfiles: 'allow' }, (err) => {
+    if (err) next(new AppError('Widget bundle not built - run npm run build:widget in client/', 404));
+  });
+});
+
 app.use(chatRoutes);
 
 app.use(errorHandler);
 
 app.listen(port, async () => {
   logger.info(`Chatbot server listening on port ${port}`);
+  startPurgeSchedule();
   await pingOllama();
 });

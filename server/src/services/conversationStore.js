@@ -1,10 +1,31 @@
 const db = require('../db/connection');
+const AppError = require('../utils/AppError');
 
 const HISTORY_LIMIT = 10;
 const REQUIRED_TICKET_FIELDS = ['category', 'priority', 'summary', 'description'];
 
 function getOrCreateConversation(sessionId) {
   db.prepare('INSERT OR IGNORE INTO conversations (session_id) VALUES (?)').run(sessionId);
+}
+
+// A conversation belongs to the widget it started on. Without this, a session
+// id picked up on one site could be carried on through another widget's key,
+// past that site's allowlist. Rows from before widget keys existed have none
+// and are claimed by the first key they see.
+function bindWidget(sessionId, widgetKey) {
+  const row = db.prepare('SELECT widget_key FROM conversations WHERE session_id = ?').get(sessionId);
+  if (!row.widget_key) {
+    db.prepare('UPDATE conversations SET widget_key = ? WHERE session_id = ?').run(widgetKey, sessionId);
+    return;
+  }
+  if (row.widget_key !== widgetKey) {
+    throw new AppError('This conversation belongs to a different chat widget', 403);
+  }
+}
+
+function getTicketId(sessionId) {
+  const row = db.prepare('SELECT ticket_id FROM conversations WHERE session_id = ?').get(sessionId);
+  return row?.ticket_id || null;
 }
 
 function appendMessage(sessionId, role, content) {
@@ -131,6 +152,8 @@ function clearLookupState(sessionId) {
 
 module.exports = {
   getOrCreateConversation,
+  bindWidget,
+  getTicketId,
   appendMessage,
   getHistory,
   touchConversation,

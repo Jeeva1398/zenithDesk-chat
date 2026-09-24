@@ -1,9 +1,30 @@
 .zd-chat-widget {
+  /* Defaults, overridden inline from the widget's settings. */
+  --zd-primary: #2563eb;
+  --zd-on-primary: #ffffff;
+  --zd-bot-bg: #f1f5f9;
+  --zd-bot-text: #0f172a;
+  --zd-panel-bg: #ffffff;
+  --zd-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --zd-radius: 12px;
+  --zd-bubble-radius: 12px;
+
   position: fixed;
-  right: 20px;
   bottom: 20px;
   z-index: 999999;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--zd-font);
+  display: flex;
+  flex-direction: column;
+}
+
+.zd-chat-widget--right {
+  right: 20px;
+  align-items: flex-end;
+}
+
+.zd-chat-widget--left {
+  left: 20px;
+  align-items: flex-start;
 }
 
 .zd-chat-widget__launcher {
@@ -11,15 +32,23 @@
   height: 56px;
   border-radius: 50%;
   border: none;
-  background: #2563eb;
-  color: #fff;
+  background: var(--zd-primary);
+  color: var(--zd-on-primary);
   font-size: 24px;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  padding: 0;
 }
 
 .zd-chat-widget__launcher:hover {
-  background: #1d4ed8;
+  filter: brightness(0.92);
+}
+
+.zd-chat-widget__launcher-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .zd-chat-window {
@@ -27,8 +56,8 @@
   height: min(480px, calc(100vh - 100px));
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-radius: 12px;
+  background: var(--zd-panel-bg);
+  border-radius: var(--zd-radius);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
   overflow: hidden;
 }
@@ -37,16 +66,52 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 12px 16px;
-  background: #2563eb;
-  color: #fff;
+  background: var(--zd-primary);
+  color: var(--zd-on-primary);
   font-weight: 600;
+}
+
+.zd-chat-window__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.zd-chat-window__logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.zd-chat-window__titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.zd-chat-window__title,
+.zd-chat-window__subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zd-chat-window__subtitle {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
 }
 
 .zd-chat-window__close {
   background: none;
   border: none;
-  color: #fff;
+  color: inherit;
   font-size: 20px;
   cursor: pointer;
   line-height: 1;
@@ -76,21 +141,21 @@
 .zd-message__bubble {
   max-width: 80%;
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: var(--zd-bubble-radius);
   font-size: 14px;
   line-height: 1.4;
   white-space: pre-wrap;
 }
 
 .zd-message--user .zd-message__bubble {
-  background: #2563eb;
-  color: #fff;
+  background: var(--zd-primary);
+  color: var(--zd-on-primary);
   border-bottom-right-radius: 2px;
 }
 
 .zd-message--assistant .zd-message__bubble {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--zd-bot-bg);
+  color: var(--zd-bot-text);
   border-bottom-left-radius: 2px;
 }
 
@@ -190,15 +255,15 @@
 }
 
 .zd-chat-input input:focus {
-  border-color: #2563eb;
+  border-color: var(--zd-primary);
 }
 
 .zd-chat-input button {
   padding: 8px 16px;
   border-radius: 20px;
   border: none;
-  background: #2563eb;
-  color: #fff;
+  background: var(--zd-primary);
+  color: var(--zd-on-primary);
   font-size: 14px;
   cursor: pointer;
 }
@@ -206,4 +271,50 @@
 .zd-chat-input button:disabled {
   background: #94a3b8;
   cursor: not-allowed;
+}
+
+.zd-chat-input .zd-chat-input__attach {
+  padding: 8px 10px;
+  background: transparent;
+  color: #475569;
+  font-size: 16px;
+}
+
+.zd-chat-input .zd-chat-input__attach:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.zd-chat-input .zd-chat-input__attach:disabled {
+  background: transparent;
+  opacity: 0.5;
+}
+
+.zd-attachment {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.zd-attachment__name {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.zd-attachment__note {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+@media (max-width: 480px) {
+  .zd-chat-widget--right,
+  .zd-chat-widget--left {
+    right: 12px;
+    left: auto;
+    bottom: 12px;
+  }
+
+  .zd-chat-widget--left {
+    left: 12px;
+    right: auto;
+  }
 }

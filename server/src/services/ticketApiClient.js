@@ -31,4 +31,31 @@ async function createTicket({ customerName, customerEmail, subject, description,
   }
 }
 
-module.exports = { createTicket };
+// Sent as multipart, the way the main app's upload route expects it. The main
+// app re-checks the file's type and the org's attachment settings itself, so
+// nothing validated here is taken on trust there.
+async function uploadAttachment(ticketId, { buffer, filename, mimeType }) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  const form = new FormData();
+  form.append('file', new Blob([buffer], { type: mimeType }), filename);
+
+  try {
+    const res = await fetch(`${TICKET_API_BASE_URL}/tickets/${encodeURIComponent(ticketId)}/attachments`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TICKET_API_TOKEN}` },
+      signal: controller.signal,
+      body: form,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Attachment upload failed: ${res.status} ${await res.text()}`);
+    }
+    return res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+module.exports = { createTicket, uploadAttachment };

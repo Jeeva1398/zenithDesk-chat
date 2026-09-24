@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   customer_jwt TEXT,
   customer_jwt_expires_at DATETIME,
   last_shown_ticket_ids TEXT,
+  widget_key TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   confirmed_at DATETIME
@@ -29,3 +30,19 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages (session_id);
+
+-- Files a customer attached in the widget. Held here only until the ticket
+-- they belong to exists, then forwarded to the main app and deleted from disk.
+CREATE TABLE IF NOT EXISTS attachments (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES conversations (session_id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  storage_path TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'forwarded', 'failed')),
+  ticket_id TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_session_id ON attachments (session_id);

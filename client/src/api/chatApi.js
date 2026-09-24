@@ -1,19 +1,47 @@
-const API_BASE_URL = import.meta.env.VITE_CHATBOT_API_URL || 'http://localhost:4000';
+const DEFAULT_API_BASE_URL = import.meta.env.VITE_CHATBOT_API_URL || 'http://localhost:4000';
 
-async function sendMessage(sessionId, message) {
-  const res = await fetch(`${API_BASE_URL}/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, message }),
-  });
-
+async function readJson(res) {
   const data = await res.json().catch(() => ({}));
-
   if (!res.ok) {
-    throw new Error(data.error || 'Something went wrong. Please try again.');
+    const err = new Error(data.error || 'Something went wrong. Please try again.');
+    err.status = res.status;
+    throw err;
   }
-
-  return data.reply;
+  return data;
 }
 
-export { sendMessage };
+// Every call names its widget, which is how the server knows whose settings
+// and whose helpdesk a conversation belongs to.
+function createChatApi({ apiBaseUrl = DEFAULT_API_BASE_URL, widgetKey }) {
+  const base = apiBaseUrl.replace(/\/$/, '');
+
+  return {
+    async getConfig() {
+      const res = await fetch(`${base}/config/${encodeURIComponent(widgetKey)}`);
+      return readJson(res);
+    },
+
+    async sendMessage(sessionId, message) {
+      const res = await fetch(`${base}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Widget-Key': widgetKey },
+        body: JSON.stringify({ sessionId, message }),
+      });
+      return (await readJson(res)).reply;
+    },
+
+    async uploadAttachment(sessionId, file) {
+      const form = new FormData();
+      form.append('sessionId', sessionId);
+      form.append('file', file);
+      const res = await fetch(`${base}/attachments`, {
+        method: 'POST',
+        headers: { 'X-Widget-Key': widgetKey },
+        body: form,
+      });
+      return readJson(res);
+    },
+  };
+}
+
+export { createChatApi };

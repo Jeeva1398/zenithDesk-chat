@@ -30,6 +30,7 @@ const NEW_CONVERSATION_COLUMNS = {
   customer_jwt: 'TEXT',
   customer_jwt_expires_at: 'DATETIME',
   last_shown_ticket_ids: 'TEXT',
+  widget_key: 'TEXT',
 };
 
 const existingColumns = new Set(db.prepare('PRAGMA table_info(conversations)').all().map((col) => col.name));

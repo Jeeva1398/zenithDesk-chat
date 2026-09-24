@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react';
-import { sendMessage as sendChatMessage } from '../api/chatApi';
 
 const SESSION_STORAGE_KEY = 'zenithdesk-chatbot-session-id';
 
@@ -10,25 +9,33 @@ function createSessionId() {
   return `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function getOrCreateSessionId() {
-  const existing = window.localStorage.getItem(SESSION_STORAGE_KEY);
+// Namespaced by widget key: the server binds a conversation to the widget it
+// started on, so a session from one widget would be refused by another.
+function getOrCreateSessionId(widgetKey) {
+  const storageKey = `${SESSION_STORAGE_KEY}:${widgetKey}`;
+  const existing = window.localStorage.getItem(storageKey);
   if (existing) return existing;
 
   const created = createSessionId();
-  window.localStorage.setItem(SESSION_STORAGE_KEY, created);
+  window.localStorage.setItem(storageKey, created);
   return created;
 }
 
-function useChatSession() {
-  const [sessionId] = useState(getOrCreateSessionId);
-  const [messages, setMessages] = useState([]);
-  const [isSending, setIsSending] = useState(false);
-  const [error, setError] = useState(null);
+function useChatSession({ api, widgetKey, greeting }) {
+  const [sessionId] = useState(() => getOrCreateSessionId(widgetKey));
   const nextMessageId = useRef(0);
-
-  const appendMessage = useCallback((role, content) => {
+  const [messages, setMessages] = useState(() => {
+    if (!greeting) return [];
     nextMessageId.current += 1;
-    setMessages((prev) => [...prev, { id: nextMessageId.current, role, content }]);
+    return [{ id: nextMessageId.current, role: 'assistant', content: greeting }];
+  });
+  const [isSending, setIsSending] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const appendMessage = useCallback((message) => {
+    nextMessageId.current += 1;
+    setMessages((prev) => [...prev, { id: nextMessageId.current, ...message }]);
   }, []);
 
   const sendMessage = useCallback(
@@ -37,22 +44,45 @@ function useChatSession() {
       if (!trimmed || isSending) return;
 
       setError(null);
-      appendMessage('user', trimmed);
+      appendMessage({ role: 'user', content: trimmed });
       setIsSending(true);
 
       try {
-        const reply = await sendChatMessage(sessionId, trimmed);
-        appendMessage('assistant', reply);
+        const reply = await api.sendMessage(sessionId, trimmed);
+        appendMessage({ role: 'assistant', content: reply });
       } catch (err) {
         setError(err.message);
       } finally {
         setIsSending(false);
       }
     },
-    [sessionId, isSending, appendMessage],
+    [api, sessionId, isSending, appendMessage],
   );
 
-  return { sessionId, messages, sendMessage, isSending, error };
+  const uploadFile = useCallback(
+    async (file) => {
+      if (!file || isUploading) return;
+
+      setError(null);
+      setIsUploading(true);
+      try {
+        const attachment = await api.uploadAttachment(sessionId, file);
+        appendMessage({
+          role: 'user',
+          kind: 'attachment',
+          filename: attachment.filename,
+          addedToTicket: attachment.addedToTicket,
+        });
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [api, sessionId, isUploading, appendMessage],
+  );
+
+  return { sessionId, messages, sendMessage, uploadFile, isSending, isUploading, error };
 }
 
 export default useChatSession;

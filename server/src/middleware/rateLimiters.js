@@ -23,4 +23,21 @@ const chatLimiter = rateLimit({
   handler: rejectWith('Too many messages - please slow down and try again shortly.'),
 });
 
-module.exports = { chatLimiter };
+// Fetched once per page load by every visitor, so it is looser than /chat. The
+// responses are cached, so this protects the lookup rather than the model.
+const configLimiter = rateLimit({
+  ...common,
+  windowMs: 5 * 60 * 1000,
+  limit: 60,
+  handler: rejectWith('Too many requests - please try again shortly.'),
+});
+
+// Each upload is up to 10 MB of disk and a forward to the main app.
+const attachmentLimiter = rateLimit({
+  ...common,
+  windowMs: 10 * 60 * 1000,
+  limit: 20,
+  handler: rejectWith('Too many files - please wait a few minutes before attaching more.'),
+});
+
+module.exports = { chatLimiter, configLimiter, attachmentLimiter };
