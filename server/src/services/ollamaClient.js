@@ -42,4 +42,4 @@ async function pingOllama() {
   }
 }
 
-module.exports = { chat, pingOllama };
+module.exports = { chat, pingOllama, ping: pingOllama };

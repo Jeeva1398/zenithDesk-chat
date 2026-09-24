@@ -1,4 +1,4 @@
-const ollamaClient = require('./ollamaClient');
+const llmClient = require('./llmClient');
 const ruleBasedClassifier = require('./ruleBasedClassifier');
 const { TicketExtractionSchema } = require('../schemas/ticketExtraction.schema');
 const { buildExtractionPrompt } = require('../prompts/extraction.prompt');
@@ -119,7 +119,7 @@ async function extractTicketFields(history, knownFields) {
 
     let raw;
     try {
-      raw = await ollamaClient.chat({ messages: promptMessages, format: 'json', options: { temperature: 0.15 } });
+      raw = await llmClient.chat({ messages: promptMessages, format: 'json', options: { temperature: 0.15 } });
     } catch (err) {
       logger.warn(`Extraction attempt ${attempt} call failed: ${err.message}`);
       continue;

@@ -35,6 +35,10 @@ function validateEnv() {
     errors.push('TICKET_API_BASE_URL is required');
   }
 
+  // Required lazily: the LLM modules read their settings at load time, which
+  // must happen after dotenv has run.
+  errors.push(...require('../services/llmClient').validateProviders());
+
   if (errors.length > 0) {
     throw new Error(`Invalid environment configuration:\n  - ${errors.join('\n  - ')}`);
   }

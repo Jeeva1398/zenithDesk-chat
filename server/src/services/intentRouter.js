@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const ollamaClient = require('./ollamaClient');
+const llmClient = require('./llmClient');
 const logger = require('../utils/logger');
 
 const STATUS_KEYWORDS = [
@@ -34,7 +34,7 @@ function keywordMatch(text) {
 
 async function classifyWithLLM(message) {
   try {
-    const raw = await ollamaClient.chat({
+    const raw = await llmClient.chat({
       messages: [
         { role: 'system', content: INTENT_SYSTEM_PROMPT },
         { role: 'user', content: message },

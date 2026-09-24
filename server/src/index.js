@@ -9,7 +9,7 @@ const morgan = require('./utils/morgan');
 const { validateEnv, getCorsOrigins } = require('./config/env');
 const AppError = require('./utils/AppError');
 require('./db/connection');
-const { pingOllama } = require('./services/ollamaClient');
+const llmClient = require('./services/llmClient');
 const chatRoutes = require('./routes/chat.routes');
 const { startPurgeSchedule } = require('./services/attachmentService');
 const errorHandler = require('./middleware/errorHandler');
@@ -79,5 +79,5 @@ app.use(errorHandler);
 app.listen(port, async () => {
   logger.info(`Chatbot server listening on port ${port}`);
   startPurgeSchedule();
-  await pingOllama();
+  await llmClient.ping();
 });
