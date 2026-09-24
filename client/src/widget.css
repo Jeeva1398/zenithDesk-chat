@@ -318,3 +318,26 @@
     right: auto;
   }
 }
+
+.zd-quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 2px;
+}
+
+.zd-quick-replies__chip {
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--zd-primary);
+  background: var(--zd-panel-bg);
+  color: var(--zd-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.zd-quick-replies__chip:hover {
+  background: var(--zd-primary);
+  color: var(--zd-on-primary);
+}

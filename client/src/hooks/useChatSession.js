@@ -2,6 +2,10 @@ import { useCallback, useRef, useState } from 'react';
 
 const SESSION_STORAGE_KEY = 'zenithdesk-chatbot-session-id';
 
+// Offered under the widget's own greeting, which is shown locally before the
+// server has been asked anything. Same labels the server offers after "hi".
+const START_CHIPS = ['Report a problem', 'Check my ticket status'];
+
 function createSessionId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -27,7 +31,7 @@ function useChatSession({ api, widgetKey, greeting }) {
   const [messages, setMessages] = useState(() => {
     if (!greeting) return [];
     nextMessageId.current += 1;
-    return [{ id: nextMessageId.current, role: 'assistant', content: greeting }];
+    return [{ id: nextMessageId.current, role: 'assistant', content: greeting, chips: START_CHIPS }];
   });
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -48,8 +52,8 @@ function useChatSession({ api, widgetKey, greeting }) {
       setIsSending(true);
 
       try {
-        const reply = await api.sendMessage(sessionId, trimmed);
-        appendMessage({ role: 'assistant', content: reply });
+        const { reply, ticket, chips } = await api.sendMessage(sessionId, trimmed);
+        appendMessage({ role: 'assistant', content: reply, ticket, chips });
       } catch (err) {
         setError(err.message);
       } finally {

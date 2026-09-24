@@ -27,7 +27,8 @@ function createChatApi({ apiBaseUrl = DEFAULT_API_BASE_URL, widgetKey }) {
         headers: { 'Content-Type': 'application/json', 'X-Widget-Key': widgetKey },
         body: JSON.stringify({ sessionId, message }),
       });
-      return (await readJson(res)).reply;
+      // { reply, ticket?, chips? }
+      return readJson(res);
     },
 
     async uploadAttachment(sessionId, file) {

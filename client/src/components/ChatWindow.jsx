@@ -17,7 +17,11 @@ function ChatWindow({ theme, messages, isSending, error, onSend, attachments, on
         </button>
       </div>
 
-      <MessageList messages={messages} isSending={isSending || attachments?.isUploading} />
+      <MessageList
+        messages={messages}
+        isSending={isSending || attachments?.isUploading}
+        onChipSelect={onSend}
+      />
 
       {error && <div className="zd-chat-window__error">{error}</div>}
 

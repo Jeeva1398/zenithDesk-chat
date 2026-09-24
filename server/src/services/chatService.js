@@ -4,6 +4,7 @@ const ticketApiClient = require('./ticketApiClient');
 const intentRouter = require('./intentRouter');
 const ticketStatusFlow = require('./ticketStatusFlow');
 const attachmentService = require('./attachmentService');
+const { matchChoice, nextQuestionField } = require('./replyExtras');
 const { EMAIL_PATTERN } = require('../utils/emailPattern');
 const logger = require('../utils/logger');
 
@@ -32,7 +33,7 @@ function isBareGreeting(message) {
 }
 
 function buildFollowUpQuestion(missingFields) {
-  const field = missingFields[0];
+  const field = nextQuestionField(missingFields);
   return FOLLOW_UP_QUESTIONS[field] || 'Could you tell me a bit more about the issue so I can get a ticket started?';
 }
 
@@ -154,11 +155,20 @@ async function sendMessage(sessionId, message, clientIp, widgetKey) {
     }
   }
 
-  const history = conversationStore.getHistory(sessionId);
-  const knownFields = conversationStore.getKnownFields(sessionId);
+  // A tapped chip (or the same word typed) answers the one question just
+  // asked, so it is set directly - no model call for a single known word.
+  const askedField = nextQuestionField(JSON.parse(existing.missing_fields || '[]'));
+  const choice = conversationAlreadyStarted ? matchChoice(askedField, message) : null;
 
-  const extraction = await extractionService.extractTicketFields(history, knownFields);
-  const merged = conversationStore.mergeExtractedFields(sessionId, extraction);
+  let merged;
+  if (choice) {
+    merged = conversationStore.mergeExtractedFields(sessionId, { [askedField]: choice });
+  } else {
+    const history = conversationStore.getHistory(sessionId);
+    const knownFields = conversationStore.getKnownFields(sessionId);
+    const extraction = await extractionService.extractTicketFields(history, knownFields);
+    merged = conversationStore.mergeExtractedFields(sessionId, extraction);
+  }
 
   let reply;
   if (merged.needs_more_info) {
@@ -176,4 +186,4 @@ async function sendMessage(sessionId, message, clientIp, widgetKey) {
   return reply;
 }
 
-module.exports = { sendMessage };
+module.exports = { sendMessage, GREETING_REPLY };

@@ -54,7 +54,7 @@ function getKnownFields(sessionId) {
 function getConversationSummary(sessionId) {
   return db
     .prepare(
-      `SELECT status, ticket_id, category, priority, summary, description, needs_more_info, awaiting_contact,
+      `SELECT status, ticket_id, category, priority, summary, description, needs_more_info, missing_fields, awaiting_contact,
               lookup_state, customer_email, customer_jwt, customer_jwt_expires_at, last_shown_ticket_ids
        FROM conversations WHERE session_id = ?`,
     )

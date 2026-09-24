@@ -2,6 +2,7 @@ const chatService = require('../services/chatService');
 const conversationStore = require('../services/conversationStore');
 const attachmentService = require('../services/attachmentService');
 const { toPublicConfig } = require('../services/widgetConfigService');
+const { buildExtras } = require('../services/replyExtras');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/AppError');
 
@@ -26,8 +27,16 @@ const sendMessage = catchAsync(async (req, res) => {
     throw new AppError('sessionId and message are required', 400);
   }
 
+  const before = conversationStore.getConversationSummary(sessionId);
   const reply = await chatService.sendMessage(sessionId, message, req.ip, req.widget.publicKey);
-  res.json({ reply });
+  const after = conversationStore.getConversationSummary(sessionId);
+
+  // `reply` stays a plain string, so an older widget keeps working; the
+  // extras are additive.
+  res.json({
+    reply,
+    ...buildExtras(before, after, { isGreeting: reply === chatService.GREETING_REPLY }),
+  });
 });
 
 const uploadAttachment = catchAsync(async (req, res) => {

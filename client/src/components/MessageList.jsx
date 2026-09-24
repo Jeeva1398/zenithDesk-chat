@@ -3,11 +3,11 @@ import MessageBubble from './MessageBubble';
 import TicketConfirmation from './TicketConfirmation';
 import TypingIndicator from './TypingIndicator';
 import AttachmentBubble from './AttachmentBubble';
+import QuickReplies from './QuickReplies';
 
-const TICKET_CONFIRMATION_PATTERN = /^Thanks — I've created ticket #(\S+) for you: "(.+)"\./;
-
-function MessageList({ messages, isSending }) {
+function MessageList({ messages, isSending, onChipSelect }) {
   const bottomRef = useRef(null);
+  const lastMessage = messages[messages.length - 1];
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -25,14 +25,18 @@ function MessageList({ messages, isSending }) {
             />
           );
         }
-        if (message.role === 'assistant') {
-          const match = message.content.match(TICKET_CONFIRMATION_PATTERN);
-          if (match) {
-            return <TicketConfirmation key={message.id} ticketId={match[1]} summary={match[2]} />;
-          }
+        if (message.ticket) {
+          return (
+            <TicketConfirmation key={message.id} ticketId={message.ticket.id} summary={message.ticket.summary} />
+          );
         }
         return <MessageBubble key={message.id} role={message.role} content={message.content} />;
       })}
+      {/* Only the latest reply's chips: an older question has already been
+          answered, and tapping its options would answer it again. */}
+      {!isSending && lastMessage?.chips?.length > 0 && (
+        <QuickReplies chips={lastMessage.chips} onSelect={onChipSelect} />
+      )}
       {isSending && <TypingIndicator />}
       <div ref={bottomRef} />
     </div>
