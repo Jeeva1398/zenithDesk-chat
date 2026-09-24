@@ -91,8 +91,8 @@ async function addAttachment(sessionId, file, attachmentsConfig, ticketId) {
 
   if (ticketId) {
     db.prepare(
-      `INSERT INTO attachments (id, session_id, filename, mime_type, size_bytes, ticket_id)
-       VALUES (@id, @session_id, @filename, @mime_type, @size_bytes, @ticket_id)`,
+      `INSERT INTO attachments (id, session_id, filename, mime_type, size_bytes, ticket_id, created_at)
+       VALUES (@id, @session_id, @filename, @mime_type, @size_bytes, @ticket_id, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
     ).run(row);
     const forwarded = await forward({ ...row, storage_path: null }, file.buffer);
     if (!forwarded) {
@@ -104,8 +104,8 @@ async function addAttachment(sessionId, file, attachmentsConfig, ticketId) {
   const storagePath = storagePathFor(row.id);
   await fs.promises.writeFile(storagePath, file.buffer);
   db.prepare(
-    `INSERT INTO attachments (id, session_id, filename, mime_type, size_bytes, storage_path)
-     VALUES (@id, @session_id, @filename, @mime_type, @size_bytes, @storage_path)`,
+    `INSERT INTO attachments (id, session_id, filename, mime_type, size_bytes, storage_path, created_at)
+     VALUES (@id, @session_id, @filename, @mime_type, @size_bytes, @storage_path, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
   ).run({ ...row, storage_path: storagePath });
 
   return { id: row.id, filename: row.filename, size: row.size_bytes, addedToTicket: null };
@@ -161,4 +161,13 @@ function startPurgeSchedule() {
   timer.unref();
 }
 
-module.exports = { addAttachment, forwardPending, startPurgeSchedule, MAX_PENDING_PER_SESSION };
+function listForSession(sessionId) {
+  return db
+    .prepare(
+      `SELECT id, filename, ticket_id, status, created_at FROM attachments
+       WHERE session_id = ? ORDER BY created_at, rowid`,
+    )
+    .all(sessionId);
+}
+
+module.exports = { listForSession, addAttachment, forwardPending, startPurgeSchedule, MAX_PENDING_PER_SESSION };

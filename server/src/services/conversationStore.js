@@ -2,6 +2,9 @@ const db = require('../db/connection');
 const AppError = require('../utils/AppError');
 
 const HISTORY_LIMIT = 10;
+// What a reloaded widget gets back. Longer than the model's window, since this
+// is for the customer to read rather than for a prompt.
+const TRANSCRIPT_LIMIT = 50;
 const REQUIRED_TICKET_FIELDS = ['category', 'priority', 'summary', 'description'];
 
 function getOrCreateConversation(sessionId) {
@@ -29,7 +32,13 @@ function getTicketId(sessionId) {
 }
 
 function appendMessage(sessionId, role, content) {
-  db.prepare('INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)').run(sessionId, role, content);
+  // Stamped to the millisecond rather than by the column default, which is to
+  // the second: a reloaded transcript interleaves messages with attachments by
+  // time, and a file sent a moment before a message must stay before it.
+  db.prepare(
+    `INSERT INTO messages (session_id, role, content, created_at)
+     VALUES (?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
+  ).run(sessionId, role, content);
 }
 
 function getHistory(sessionId, limit = HISTORY_LIMIT) {
@@ -37,6 +46,32 @@ function getHistory(sessionId, limit = HISTORY_LIMIT) {
     .prepare('SELECT role, content FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?')
     .all(sessionId, limit)
     .reverse();
+}
+
+function getTranscript(sessionId, limit = TRANSCRIPT_LIMIT) {
+  return db
+    .prepare(
+      `SELECT id, role, content, meta, created_at FROM messages
+       WHERE session_id = ? AND role IN ('user', 'assistant')
+       ORDER BY id DESC LIMIT ?`,
+    )
+    .all(sessionId, limit)
+    .reverse();
+}
+
+// Attaches what the widget was shown alongside the latest reply - set by the
+// controller once it has worked those out, after the flow has stored the text.
+function setLatestReplyMeta(sessionId, meta) {
+  db.prepare(
+    `UPDATE messages SET meta = ?
+     WHERE id = (SELECT MAX(id) FROM messages WHERE session_id = ? AND role = 'assistant')`,
+  ).run(JSON.stringify(meta), sessionId);
+}
+
+// Read-only counterpart to bindWidget, for requests that should not claim an
+// unbound conversation just by looking at it.
+function getWidgetKey(sessionId) {
+  return db.prepare('SELECT widget_key FROM conversations WHERE session_id = ?').get(sessionId)?.widget_key ?? null;
 }
 
 function touchConversation(sessionId) {
@@ -156,6 +191,10 @@ module.exports = {
   getTicketId,
   appendMessage,
   getHistory,
+  getTranscript,
+  TRANSCRIPT_LIMIT,
+  setLatestReplyMeta,
+  getWidgetKey,
   touchConversation,
   getKnownFields,
   getConversationSummary,

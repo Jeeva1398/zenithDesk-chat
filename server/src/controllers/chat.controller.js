@@ -3,6 +3,7 @@ const conversationStore = require('../services/conversationStore');
 const attachmentService = require('../services/attachmentService');
 const { toPublicConfig } = require('../services/widgetConfigService');
 const { buildExtras } = require('../services/replyExtras');
+const { buildTranscript } = require('../services/transcriptService');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/AppError');
 
@@ -31,11 +32,35 @@ const sendMessage = catchAsync(async (req, res) => {
   const reply = await chatService.sendMessage(sessionId, message, req.ip, req.widget.publicKey);
   const after = conversationStore.getConversationSummary(sessionId);
 
+  const extras = buildExtras(before, after, { isGreeting: reply === chatService.GREETING_REPLY });
+  // Stored with the reply, so a reloaded widget can redraw the ticket card and
+  // the chips instead of just the text.
+  if (Object.keys(extras).length > 0) {
+    conversationStore.setLatestReplyMeta(sessionId, extras);
+  }
+
   // `reply` stays a plain string, so an older widget keeps working; the
   // extras are additive.
+  res.json({ reply, ...extras });
+});
+
+// The session id is the only thing proving a visitor owns a conversation -
+// it is a random UUID that never leaves their browser's storage. A session
+// bound to another widget is refused rather than shown, and an unknown one is
+// simply empty: looking must not create or claim a conversation.
+const getHistory = catchAsync(async (req, res) => {
+  const sessionId = requireSessionId(req.query.sessionId);
+  res.set('Cache-Control', 'no-store');
+
+  const boundKey = conversationStore.getWidgetKey(sessionId);
+  if (boundKey && boundKey !== req.widget.publicKey) {
+    throw new AppError('This conversation belongs to a different chat widget', 403);
+  }
+
+  const summary = conversationStore.getConversationSummary(sessionId);
   res.json({
-    reply,
-    ...buildExtras(before, after, { isGreeting: reply === chatService.GREETING_REPLY }),
+    messages: summary ? buildTranscript(sessionId) : [],
+    ticket: summary?.status === 'confirmed' ? { id: summary.ticket_id, summary: summary.summary } : null,
   });
 });
 
@@ -54,4 +79,4 @@ const uploadAttachment = catchAsync(async (req, res) => {
   res.status(201).json(attachment);
 });
 
-module.exports = { getConfig, sendMessage, uploadAttachment };
+module.exports = { getConfig, sendMessage, getHistory, uploadAttachment };

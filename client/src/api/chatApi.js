@@ -31,6 +31,14 @@ function createChatApi({ apiBaseUrl = DEFAULT_API_BASE_URL, widgetKey }) {
       return readJson(res);
     },
 
+    // { messages, ticket } - the conversation so far, to redraw after a reload.
+    async getHistory(sessionId) {
+      const res = await fetch(`${base}/chat/history?sessionId=${encodeURIComponent(sessionId)}`, {
+        headers: { 'X-Widget-Key': widgetKey },
+      });
+      return readJson(res);
+    },
+
     async uploadAttachment(sessionId, file) {
       const form = new FormData();
       form.append('sessionId', sessionId);

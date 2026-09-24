@@ -33,14 +33,35 @@ function acceptFor(types) {
   return types.flatMap((t) => [EXTENSIONS[t], MIME_TYPES[t]]).filter(Boolean).join(',');
 }
 
+// Open or closed is remembered for the visit (sessionStorage), so moving to
+// another page does not snap an open chat shut mid-conversation - but a new
+// visit starts closed rather than popping up uninvited.
+function readOpenState(key) {
+  try {
+    return window.sessionStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeOpenState(key, open) {
+  try {
+    window.sessionStorage.setItem(key, open ? '1' : '0');
+  } catch {
+    // Not remembered; harmless.
+  }
+}
+
 function ChatWidgetPanel({ api, widgetKey, config }) {
   const { theme, tools } = config;
-  const [isOpen, setIsOpen] = useState(false);
-  const { messages, sendMessage, uploadFile, isSending, isUploading, error } = useChatSession({
-    api,
-    widgetKey,
-    greeting: theme.greeting,
-  });
+  const openKey = `zenithdesk-chatbot-open:${widgetKey}`;
+  const [isOpen, setIsOpenState] = useState(() => readOpenState(openKey));
+  const setIsOpen = (open) => {
+    setIsOpenState(open);
+    writeOpenState(openKey, open);
+  };
+  const session = useChatSession({ api, widgetKey, greeting: theme.greeting });
+  const { messages, sendMessage, uploadFile, isSending, isUploading, error } = session;
 
   const attachments = tools.attachments.enabled
     ? { accept: acceptFor(tools.attachments.types), onUpload: uploadFile, isUploading }
@@ -60,6 +81,10 @@ function ChatWidgetPanel({ api, widgetKey, config }) {
           error={error}
           onSend={sendMessage}
           attachments={attachments}
+          isLoading={session.isLoadingHistory}
+          ticket={session.ticket}
+          canStartOver={session.hasUserMessages}
+          onStartOver={session.startNewConversation}
           onClose={() => setIsOpen(false)}
         />
       ) : (

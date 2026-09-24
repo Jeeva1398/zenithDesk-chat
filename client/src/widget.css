@@ -341,3 +341,25 @@
   background: var(--zd-primary);
   color: var(--zd-on-primary);
 }
+
+.zd-chat-window__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.zd-chat-window__action {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.85;
+  padding: 2px 4px;
+}
+
+.zd-chat-window__action:hover {
+  opacity: 1;
+}

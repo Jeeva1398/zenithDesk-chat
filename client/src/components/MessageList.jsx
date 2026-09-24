@@ -5,7 +5,7 @@ import TypingIndicator from './TypingIndicator';
 import AttachmentBubble from './AttachmentBubble';
 import QuickReplies from './QuickReplies';
 
-function MessageList({ messages, isSending, onChipSelect }) {
+function MessageList({ messages, isSending, onChipSelect, ticket, onStartOver }) {
   const bottomRef = useRef(null);
   const lastMessage = messages[messages.length - 1];
 
@@ -36,6 +36,16 @@ function MessageList({ messages, isSending, onChipSelect }) {
           answered, and tapping its options would answer it again. */}
       {!isSending && lastMessage?.chips?.length > 0 && (
         <QuickReplies chips={lastMessage.chips} onSelect={onChipSelect} />
+      )}
+      {/* Once the ticket exists the conversation is done; offer a clean start
+          rather than leaving the customer to type into "you already have an
+          open ticket". */}
+      {!isSending && ticket && (lastMessage?.ticket || lastMessage?.kind === 'attachment') && (
+        <div className="zd-quick-replies">
+          <button type="button" className="zd-quick-replies__chip" onClick={onStartOver}>
+            Start a new conversation
+          </button>
+        </div>
       )}
       {isSending && <TypingIndicator />}
       <div ref={bottomRef} />
