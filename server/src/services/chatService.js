@@ -16,6 +16,8 @@ const FOLLOW_UP_QUESTIONS = {
 
 const CONTACT_REQUEST = 'Almost done — could you share your name and an email address so we can send you updates on this ticket?';
 const CONTACT_RETRY = "That didn't include a valid email — could you share your name and an email address?";
+const CONTACT_AFTER_DETAILS =
+  "Thanks, I've added that to your ticket. To finish, could you share your name and an email address so we can send you updates?";
 const TICKET_SUBMIT_FAILED = "Sorry, I wasn't able to submit your ticket just now — please try again in a moment.";
 const GREETING_REPLY =
   "Hi! I'm the ZenithDesk assistant — tell me what's going on and I'll get a support ticket started, or ask me to check on an existing ticket.";
@@ -32,6 +34,32 @@ function isBareGreeting(message) {
 function buildFollowUpQuestion(missingFields) {
   const field = missingFields[0];
   return FOLLOW_UP_QUESTIONS[field] || 'Could you tell me a bit more about the issue so I can get a ticket started?';
+}
+
+// While waiting for contact details, a message without a valid email is
+// either a botched attempt at them ("jane@", "Jane Doe") or the customer
+// adding to their issue ("it's urgent, the whole team is blocked"). The first
+// should be asked again; the second should reach the ticket rather than being
+// answered with "that didn't include a valid email". An @ or a name-length
+// message reads as an attempt; anything longer as more detail.
+const CONTACT_ATTEMPT_MAX_WORDS = 3;
+
+function looksLikeContactAttempt(message) {
+  const text = message.trim();
+  return text.includes('@') || text.split(/\s+/).filter(Boolean).length <= CONTACT_ATTEMPT_MAX_WORDS;
+}
+
+async function addDetailsWhileAwaitingContact(sessionId) {
+  const extraction = await extractionService.extractTicketFields(
+    conversationStore.getHistory(sessionId),
+    conversationStore.getKnownFields(sessionId),
+  );
+  const merged = conversationStore.mergeExtractedFields(sessionId, extraction);
+  logger.info(`Session ${sessionId}: details added while awaiting contact, priority=${merged.priority}`);
+
+  conversationStore.appendMessage(sessionId, 'assistant', CONTACT_AFTER_DETAILS);
+  conversationStore.touchConversation(sessionId);
+  return CONTACT_AFTER_DETAILS;
 }
 
 function parseContactInfo(message) {
@@ -94,6 +122,9 @@ async function sendMessage(sessionId, message, clientIp, widgetKey) {
   }
 
   if (existing.awaiting_contact) {
+    if (!parseContactInfo(message) && !looksLikeContactAttempt(message)) {
+      return addDetailsWhileAwaitingContact(sessionId);
+    }
     return submitTicket(sessionId, { ...existing, pendingContactMessage: message });
   }
 
