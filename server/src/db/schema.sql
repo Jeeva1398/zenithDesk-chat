@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS messages (
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
   content TEXT NOT NULL,
   meta TEXT,
+  feedback TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

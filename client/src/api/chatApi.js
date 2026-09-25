@@ -39,6 +39,16 @@ function createChatApi({ apiBaseUrl = DEFAULT_API_BASE_URL, widgetKey }) {
       return readJson(res);
     },
 
+    // Thumbs up ('up'), down ('down') or taken back (null) on one reply.
+    async sendFeedback(sessionId, messageId, feedback) {
+      const res = await fetch(`${base}/chat/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Widget-Key': widgetKey },
+        body: JSON.stringify({ sessionId, messageId, feedback }),
+      });
+      if (!res.ok) await readJson(res);
+    },
+
     async uploadAttachment(sessionId, file) {
       const form = new FormData();
       form.append('sessionId', sessionId);

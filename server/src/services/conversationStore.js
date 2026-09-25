@@ -51,7 +51,7 @@ function getHistory(sessionId, limit = HISTORY_LIMIT) {
 function getTranscript(sessionId, limit = TRANSCRIPT_LIMIT) {
   return db
     .prepare(
-      `SELECT id, role, content, meta, created_at FROM messages
+      `SELECT id, role, content, meta, feedback, created_at FROM messages
        WHERE session_id = ? AND role IN ('user', 'assistant')
        ORDER BY id DESC LIMIT ?`,
     )
@@ -66,6 +66,24 @@ function setLatestReplyMeta(sessionId, meta) {
     `UPDATE messages SET meta = ?
      WHERE id = (SELECT MAX(id) FROM messages WHERE session_id = ? AND role = 'assistant')`,
   ).run(JSON.stringify(meta), sessionId);
+}
+
+// The id of the reply just stored, so the widget can rate it later.
+function getLatestAssistantMessageId(sessionId) {
+  return (
+    db
+      .prepare("SELECT MAX(id) AS id FROM messages WHERE session_id = ? AND role = 'assistant'")
+      .get(sessionId)?.id ?? null
+  );
+}
+
+// A visitor's thumbs up or down on one of the bot's replies in their own
+// conversation, or null to take it back. Returns whether such a reply exists.
+function setMessageFeedback(sessionId, messageId, feedback) {
+  const result = db
+    .prepare("UPDATE messages SET feedback = ? WHERE id = ? AND session_id = ? AND role = 'assistant'")
+    .run(feedback, messageId, sessionId);
+  return result.changes > 0;
 }
 
 // Read-only counterpart to bindWidget, for requests that should not claim an
@@ -237,6 +255,8 @@ module.exports = {
   getTranscript,
   TRANSCRIPT_LIMIT,
   setLatestReplyMeta,
+  getLatestAssistantMessageId,
+  setMessageFeedback,
   getWidgetKey,
   touchConversation,
   getKnownFields,

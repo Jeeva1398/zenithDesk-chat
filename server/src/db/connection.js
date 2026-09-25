@@ -53,7 +53,7 @@ for (const [name, type] of Object.entries(NEW_CONVERSATION_COLUMNS)) {
 
 // Same for messages: meta (the ticket card and chips a reply came with, so a
 // reloaded widget can redraw them) arrived after the table did.
-const NEW_MESSAGE_COLUMNS = { meta: 'TEXT' };
+const NEW_MESSAGE_COLUMNS = { meta: 'TEXT', feedback: 'TEXT' };
 const existingMessageColumns = new Set(db.prepare('PRAGMA table_info(messages)').all().map((col) => col.name));
 for (const [name, type] of Object.entries(NEW_MESSAGE_COLUMNS)) {
   if (!existingMessageColumns.has(name)) {

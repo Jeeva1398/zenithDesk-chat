@@ -43,8 +43,9 @@ const sendMessage = catchAsync(async (req, res) => {
   }
 
   // `reply` stays a plain string, so an older widget keeps working; the
-  // extras are additive.
-  res.json({ reply, ...extras });
+  // extras are additive. messageId is what the widget rates the reply by.
+  const latestId = conversationStore.getLatestAssistantMessageId(sessionId);
+  res.json({ reply, ...extras, ...(latestId ? { messageId: `m${latestId}` } : {}) });
 });
 
 // The session id is the only thing proving a visitor owns a conversation -
@@ -67,6 +68,29 @@ const getHistory = catchAsync(async (req, res) => {
   });
 });
 
+const FEEDBACK_VALUES = ['up', 'down'];
+
+// Thumbs up or down on one reply. Only in a conversation bound to this widget,
+// and only on the bot's own replies, so a guessed id cannot touch anyone
+// else's chat.
+const sendFeedback = catchAsync(async (req, res) => {
+  const sessionId = requireSessionId(req.body.sessionId);
+  const { messageId, feedback } = req.body;
+
+  const match = typeof messageId === 'string' ? messageId.match(/^m(\d+)$/) : null;
+  if (!match) throw new AppError('messageId is required', 400);
+  if (feedback !== null && !FEEDBACK_VALUES.includes(feedback)) {
+    throw new AppError('feedback must be "up", "down" or null', 400);
+  }
+  if (conversationStore.getWidgetKey(sessionId) !== req.widget.publicKey) {
+    throw new AppError('Message not found', 404);
+  }
+  if (!conversationStore.setMessageFeedback(sessionId, Number(match[1]), feedback)) {
+    throw new AppError('Message not found', 404);
+  }
+  res.status(204).end();
+});
+
 const uploadAttachment = catchAsync(async (req, res) => {
   const sessionId = requireSessionId(req.body.sessionId);
 
@@ -83,4 +107,4 @@ const uploadAttachment = catchAsync(async (req, res) => {
   res.status(201).json(attachment);
 });
 
-module.exports = { getConfig, sendMessage, getHistory, uploadAttachment };
+module.exports = { getConfig, sendMessage, getHistory, sendFeedback, uploadAttachment };

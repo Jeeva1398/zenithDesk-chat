@@ -29,6 +29,7 @@ function buildTranscript(sessionId) {
       ...(ticket ? { ticket } : {}),
       ...(chips ? { chips } : {}),
       ...(sources ? { sources } : {}),
+      ...(m.feedback ? { feedback: m.feedback } : {}),
     };
   });
 

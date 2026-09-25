@@ -1,56 +1,74 @@
 import MessageList from './MessageList';
 import ChatInput from './ChatInput';
+import BotAvatar from './BotAvatar';
+import PrivacyNotice from './PrivacyNotice';
+import { ChevronDown, ChevronLeft, Refresh } from './Icons';
 
 function ChatWindow({
   theme,
+  widgetKey,
   messages,
   isSending,
   error,
   onSend,
+  onRate,
   attachments,
   isLoading,
   ticket,
   canStartOver,
   onStartOver,
+  onBack,
   onClose,
 }) {
   return (
-    <div className="zd-chat-window">
-      <div className="zd-chat-window__header">
-        <div className="zd-chat-window__identity">
-          {theme.logoUrl && <img src={theme.logoUrl} alt="" className="zd-chat-window__logo" />}
-          <div className="zd-chat-window__titles">
-            <span className="zd-chat-window__title">{theme.title}</span>
-            {theme.subtitle && <span className="zd-chat-window__subtitle">{theme.subtitle}</span>}
-          </div>
+    <div className="zd-chat">
+      <div className="zd-panel-header">
+        <button type="button" className="zd-icon-button" onClick={onBack} aria-label="Back to home">
+          <ChevronLeft className="zd-icon" />
+        </button>
+        <BotAvatar theme={theme} size="md" online />
+        <div className="zd-panel-header__identity">
+          <span className="zd-panel-header__title">
+            <span className="zd-panel-header__name">{theme.title}</span>
+            <span className="zd-badge">AI</span>
+          </span>
+          <span className="zd-panel-header__status">Online</span>
         </div>
-        <div className="zd-chat-window__actions">
+        <div className="zd-panel-header__actions">
           {canStartOver && (
             <button
               type="button"
-              className="zd-chat-window__action"
+              className="zd-icon-button"
               onClick={onStartOver}
               aria-label="Start a new conversation"
               title="Start a new conversation"
             >
-              ↻
+              <Refresh className="zd-icon" />
             </button>
           )}
-          <button type="button" className="zd-chat-window__close" onClick={onClose} aria-label="Close chat">
-            ×
+          <button type="button" className="zd-icon-button" onClick={onClose} aria-label="Minimise chat">
+            <ChevronDown className="zd-icon" />
           </button>
         </div>
       </div>
 
       <MessageList
+        theme={theme}
         messages={messages}
         isSending={isSending || attachments?.isUploading}
         onChipSelect={onSend}
+        onRate={onRate}
         ticket={ticket}
         onStartOver={onStartOver}
       />
 
-      {error && <div className="zd-chat-window__error">{error}</div>}
+      {error && (
+        <div className="zd-chat__error" role="alert">
+          {error}
+        </div>
+      )}
+
+      <PrivacyNotice text={theme.privacyNotice} widgetKey={widgetKey} />
 
       <ChatInput
         onSend={onSend}

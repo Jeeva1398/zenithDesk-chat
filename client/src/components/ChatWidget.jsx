@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import ChatWindow from './ChatWindow';
-import useChatSession from '../hooks/useChatSession';
+import HomeView from './HomeView';
+import ConversationsView from './ConversationsView';
+import PoweredBy from './PoweredBy';
+import { ChatBubbles, ChevronDown, Home } from './Icons';
+import useChatSession, { plainPreview } from '../hooks/useChatSession';
 import { createChatApi } from '../api/chatApi';
 
 const FONT_STACKS = {
@@ -33,33 +37,46 @@ function acceptFor(types) {
   return types.flatMap((t) => [EXTENSIONS[t], MIME_TYPES[t]]).filter(Boolean).join(',');
 }
 
-// Open or closed is remembered for the visit (sessionStorage), so moving to
-// another page does not snap an open chat shut mid-conversation - but a new
-// visit starts closed rather than popping up uninvited.
-function readOpenState(key) {
+// Open or closed, and which view, are remembered for the visit
+// (sessionStorage), so moving to another page does not snap an open chat shut
+// mid-conversation - but a new visit starts closed rather than popping up
+// uninvited.
+function readSession(key, fallback) {
   try {
-    return window.sessionStorage.getItem(key) === '1';
+    return window.sessionStorage.getItem(key) ?? fallback;
   } catch {
-    return false;
+    return fallback;
   }
 }
 
-function writeOpenState(key, open) {
+function writeSession(key, value) {
   try {
-    window.sessionStorage.setItem(key, open ? '1' : '0');
+    window.sessionStorage.setItem(key, value);
   } catch {
     // Not remembered; harmless.
   }
 }
 
+const VIEWS = ['home', 'chat', 'messages'];
+
 function ChatWidgetPanel({ api, widgetKey, config }) {
   const { theme, tools } = config;
   const openKey = `zenithdesk-chatbot-open:${widgetKey}`;
-  const [isOpen, setIsOpenState] = useState(() => readOpenState(openKey));
+  const viewKey = `zenithdesk-chatbot-view:${widgetKey}`;
+  const [isOpen, setIsOpenState] = useState(() => readSession(openKey, '0') === '1');
+  const [view, setViewState] = useState(() => {
+    const saved = readSession(viewKey, 'home');
+    return VIEWS.includes(saved) ? saved : 'home';
+  });
   const setIsOpen = (open) => {
     setIsOpenState(open);
-    writeOpenState(openKey, open);
+    writeSession(openKey, open ? '1' : '0');
   };
+  const setView = (next) => {
+    setViewState(next);
+    writeSession(viewKey, next);
+  };
+
   const session = useChatSession({ api, widgetKey, greeting: theme.greeting, startChips: config.startChips });
   const { messages, sendMessage, uploadFile, isSending, isUploading, error } = session;
 
@@ -68,35 +85,117 @@ function ChatWidgetPanel({ api, widgetKey, config }) {
     : null;
   const showLogoLauncher = theme.launcherIcon === 'logo' && theme.logoUrl;
 
+  // The org's Explore topics, or the bot's own opening choices without them.
+  const topics = theme.topics?.length
+    ? theme.topics
+    : (config.startChips || []).map((chip) => ({ title: chip, subtitle: '' }));
+
+  const lastText = [...messages].reverse().find((m) => m.content && m.id !== 'greeting')?.content;
+  const continueConversation = session.hasUserMessages && !session.ticket && lastText ? plainPreview(lastText) : null;
+
+  const ask = async (text) => {
+    setView('chat');
+    await session.startConversationWith(text);
+  };
+
   return (
     <div
-      className={`zd-chat-widget zd-chat-widget--${theme.position === 'left' ? 'left' : 'right'}`}
+      className={`zd-chat-widget zd-chat-widget--${theme.position === 'left' ? 'left' : 'right'}${
+        isOpen ? ' zd-chat-widget--open' : ''
+      }`}
       style={themeStyle(theme)}
     >
-      {isOpen ? (
-        <ChatWindow
-          theme={theme}
-          messages={messages}
-          isSending={isSending}
-          error={error}
-          onSend={sendMessage}
-          attachments={attachments}
-          isLoading={session.isLoadingHistory}
-          ticket={session.ticket}
-          canStartOver={session.hasUserMessages}
-          onStartOver={session.startNewConversation}
-          onClose={() => setIsOpen(false)}
-        />
-      ) : (
-        <button
-          type="button"
-          className="zd-chat-widget__launcher"
-          onClick={() => setIsOpen(true)}
-          aria-label={`Open chat: ${theme.title}`}
-        >
-          {showLogoLauncher ? <img src={theme.logoUrl} alt="" className="zd-chat-widget__launcher-logo" /> : '💬'}
-        </button>
+      {isOpen && (
+        <div className="zd-panel" role="dialog" aria-label={theme.title}>
+          <div className="zd-panel__view">
+            {view === 'home' && (
+              <HomeView
+                theme={theme}
+                topics={topics}
+                onAsk={ask}
+                continueConversation={continueConversation}
+                onContinue={() => setView('chat')}
+                onClose={() => setIsOpen(false)}
+                disabled={isSending}
+              />
+            )}
+            {view === 'chat' && (
+              <ChatWindow
+                theme={theme}
+                widgetKey={widgetKey}
+                messages={messages}
+                isSending={isSending}
+                error={error}
+                onSend={sendMessage}
+                onRate={session.rateMessage}
+                attachments={attachments}
+                isLoading={session.isLoadingHistory}
+                ticket={session.ticket}
+                canStartOver={session.hasUserMessages}
+                onStartOver={session.startNewConversation}
+                onBack={() => setView('home')}
+                onClose={() => setIsOpen(false)}
+              />
+            )}
+            {view === 'messages' && (
+              <ConversationsView
+                theme={theme}
+                conversations={session.conversations}
+                currentId={session.sessionId}
+                onOpen={(id) => {
+                  session.openConversation(id);
+                  setView('chat');
+                }}
+                onNew={() => {
+                  session.startNewConversation();
+                  setView('chat');
+                }}
+                onClose={() => setIsOpen(false)}
+              />
+            )}
+          </div>
+
+          {view !== 'chat' && (
+            <nav className="zd-tabs" aria-label="Chat sections">
+              <button
+                type="button"
+                className={`zd-tab${view === 'home' ? ' zd-tab--active' : ''}`}
+                aria-current={view === 'home' ? 'page' : undefined}
+                onClick={() => setView('home')}
+              >
+                <Home className="zd-icon" />
+                Home
+              </button>
+              <button
+                type="button"
+                className={`zd-tab${view === 'messages' ? ' zd-tab--active' : ''}`}
+                aria-current={view === 'messages' ? 'page' : undefined}
+                onClick={() => setView('messages')}
+              >
+                <ChatBubbles className="zd-icon" />
+                Messages
+              </button>
+            </nav>
+          )}
+          <PoweredBy theme={theme} />
+        </div>
       )}
+
+      <button
+        type="button"
+        className="zd-launcher"
+        onClick={() => setIsOpen(!isOpen)}
+        aria-label={isOpen ? 'Minimise chat' : `Open chat: ${theme.title}`}
+        aria-expanded={isOpen}
+      >
+        {isOpen ? (
+          <ChevronDown className="zd-launcher__icon" />
+        ) : showLogoLauncher ? (
+          <img src={theme.logoUrl} alt="" className="zd-launcher__logo" />
+        ) : (
+          <ChatBubbles className="zd-launcher__icon" />
+        )}
+      </button>
     </div>
   );
 }
