@@ -2,7 +2,6 @@ const AppError = require('../utils/AppError');
 const logger = require('../utils/logger');
 
 const TICKET_API_BASE_URL = process.env.TICKET_API_BASE_URL;
-const TICKET_API_ORG_ID = Number(process.env.TICKET_API_ORG_ID || 1);
 const CACHE_TTL_MS = Number(process.env.WIDGET_CONFIG_TTL_SECONDS || 300) * 1000;
 // A miss is cached too, but briefly: a mistyped key should not cost the main
 // app a lookup per page view, and a freshly regenerated one should start
@@ -41,8 +40,9 @@ async function fetchConfig(publicKey, clientIp) {
   }
 }
 
-// Returns { orgId, theme, tools, allowedDomains } for a key this chatbot
-// serves, or throws. A stale entry is kept past its TTL and used if the main
+// Returns { orgId, theme, tools, allowedDomains } for a key, or throws. Any
+// org's key is served: the org it belongs to is the org its customers' tickets
+// go to, because the main app works that out from the same key. A stale entry is kept past its TTL and used if the main
 // app cannot be reached, so an outage there does not take every widget down.
 async function getWidgetConfig(publicKey, clientIp) {
   if (typeof publicKey !== 'string' || !KEY_PATTERN.test(publicKey)) {
@@ -66,16 +66,6 @@ async function getWidgetConfig(publicKey, clientIp) {
     }
     logger.warn(`Widget config lookup failed: ${err.message}`);
     throw new AppError('Chat is unavailable right now - please try again shortly', 503);
-  }
-
-  // This process holds one service token, and that token raises tickets in one
-  // org. A key from any other org would have its customers' tickets land in
-  // the wrong helpdesk, so it is treated as unknown here.
-  if (config && config.orgId !== TICKET_API_ORG_ID) {
-    logger.warn(
-      `Widget key belongs to org ${config.orgId}, but this chatbot serves org ${TICKET_API_ORG_ID} - refusing it`,
-    );
-    config = null;
   }
 
   cache.set(publicKey, { config, expiresAt: now + (config ? CACHE_TTL_MS : MISS_TTL_MS) });

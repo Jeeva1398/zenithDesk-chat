@@ -54,9 +54,9 @@ function validate(file, attachmentsConfig) {
   return detected;
 }
 
-async function forward(row, buffer) {
+async function forward(row, buffer, widgetKey) {
   try {
-    await ticketApiClient.uploadAttachment(row.ticket_id, {
+    await ticketApiClient.uploadAttachment(widgetKey, row.ticket_id, {
       buffer,
       filename: row.filename,
       mimeType: row.mime_type,
@@ -73,7 +73,7 @@ async function forward(row, buffer) {
 
 // Stores the file, and - if this conversation already raised its ticket -
 // sends it straight on. Otherwise it waits for forwardPending().
-async function addAttachment(sessionId, file, attachmentsConfig, ticketId) {
+async function addAttachment(sessionId, file, attachmentsConfig, ticketId, widgetKey) {
   const detected = validate(file, attachmentsConfig);
 
   if (!ticketId && countPending(sessionId) >= MAX_PENDING_PER_SESSION) {
@@ -94,7 +94,7 @@ async function addAttachment(sessionId, file, attachmentsConfig, ticketId) {
       `INSERT INTO attachments (id, session_id, filename, mime_type, size_bytes, ticket_id, created_at)
        VALUES (@id, @session_id, @filename, @mime_type, @size_bytes, @ticket_id, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
     ).run(row);
-    const forwarded = await forward({ ...row, storage_path: null }, file.buffer);
+    const forwarded = await forward({ ...row, storage_path: null }, file.buffer, widgetKey);
     if (!forwarded) {
       throw new AppError("Sorry, that file couldn't be added to your ticket - please try again", 502);
     }
@@ -114,7 +114,7 @@ async function addAttachment(sessionId, file, attachmentsConfig, ticketId) {
 // Called once the ticket exists. A file that fails to forward is logged and
 // left marked failed; the ticket itself already stands, and it is not worth
 // telling the customer their ticket failed when it did not.
-async function forwardPending(sessionId, ticketId) {
+async function forwardPending(sessionId, ticketId, widgetKey) {
   const rows = db
     .prepare("SELECT * FROM attachments WHERE session_id = ? AND status = 'pending' ORDER BY created_at, rowid")
     .all(sessionId);
@@ -130,7 +130,7 @@ async function forwardPending(sessionId, ticketId) {
       db.prepare("UPDATE attachments SET status = 'failed' WHERE id = ?").run(row.id);
       continue;
     }
-    if (await forward({ ...row, ticket_id: String(ticketId) }, buffer)) forwarded += 1;
+    if (await forward({ ...row, ticket_id: String(ticketId) }, buffer, widgetKey)) forwarded += 1;
   }
 
   if (rows.length > 0) {

@@ -31,9 +31,10 @@ app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 0));
 
 app.use(helmet());
 
-// An allowlist in production, any origin in development. A rejected origin gets
-// a 403 in the same { error } shape as everything else rather than a bare CORS
-// failure the widget cannot explain.
+// CHAT_CORS_ORIGINS, when set, is an outer allowlist; otherwise any origin gets
+// through to resolveWidget, which holds it to that widget's allowed sites. A
+// rejected origin gets a 403 in the same { error } shape as everything else
+// rather than a bare CORS failure the widget cannot explain.
 const allowedOrigins = getCorsOrigins();
 app.use(
   cors({

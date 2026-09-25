@@ -64,10 +64,10 @@ async function draftAnswer(question, passages) {
 // Tries to answer from the knowledge base. Returns the reply text when it
 // did, or null to let the ticket flow carry on as if this had never run - a
 // search or model failure must never cost the customer their ticket.
-async function tryAnswer(sessionId, question) {
+async function tryAnswer(sessionId, question, widgetKey) {
   let passages;
   try {
-    passages = await knowledgeClient.search(question);
+    passages = await knowledgeClient.search(widgetKey, question);
   } catch (err) {
     logger.warn(`Knowledge search failed, going straight to a ticket: ${err.message}`);
     return null;

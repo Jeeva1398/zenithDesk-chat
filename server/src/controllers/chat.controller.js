@@ -29,7 +29,7 @@ const sendMessage = catchAsync(async (req, res) => {
   }
 
   const before = conversationStore.getConversationSummary(sessionId);
-  const reply = await chatService.sendMessage(sessionId, message, req.ip, req.widget.publicKey);
+  const reply = await chatService.sendMessage(sessionId, message, req.ip, req.widget);
   const after = conversationStore.getConversationSummary(sessionId);
 
   const extras = buildExtras(before, after, { isGreeting: reply === chatService.GREETING_REPLY });
@@ -75,6 +75,7 @@ const uploadAttachment = catchAsync(async (req, res) => {
     req.file,
     req.widget.tools.attachments,
     conversationStore.getTicketId(sessionId),
+    req.widget.publicKey,
   );
   res.status(201).json(attachment);
 });

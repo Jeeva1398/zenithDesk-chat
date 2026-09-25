@@ -95,7 +95,7 @@ function parseContactInfo(message) {
   return { customerName: name || 'ZenithDesk chat customer', customerEmail: email };
 }
 
-async function submitTicket(sessionId, conversation) {
+async function submitTicket(sessionId, conversation, widgetKey) {
   const contact = parseContactInfo(conversation.pendingContactMessage);
   if (!contact) {
     conversationStore.appendMessage(sessionId, 'assistant', CONTACT_RETRY);
@@ -105,7 +105,7 @@ async function submitTicket(sessionId, conversation) {
 
   let reply;
   try {
-    const ticket = await ticketApiClient.createTicket({
+    const ticket = await ticketApiClient.createTicket(widgetKey, {
       customerName: contact.customerName,
       customerEmail: contact.customerEmail,
       subject: conversation.summary,
@@ -118,7 +118,7 @@ async function submitTicket(sessionId, conversation) {
     // Awaited so the files are on the ticket by the time an agent opens it.
     // A failure is logged inside and never un-does the ticket.
     await attachmentService
-      .forwardPending(sessionId, ticket.id)
+      .forwardPending(sessionId, ticket.id, widgetKey)
       .catch((err) => logger.warn(`Forwarding attachments for session ${sessionId} failed: ${err.message}`));
     reply = `Thanks — I've created ticket #${ticket.id} for you: "${conversation.summary}". Our team will follow up shortly.`;
   } catch (err) {
@@ -131,9 +131,11 @@ async function submitTicket(sessionId, conversation) {
   return reply;
 }
 
-async function sendMessage(sessionId, message, clientIp, widgetKey) {
+// widget is the resolved widget the message came through: its key, which the
+// main app finds the org from, and that org, for the OTP calls that take it.
+async function sendMessage(sessionId, message, clientIp, widget) {
   conversationStore.getOrCreateConversation(sessionId);
-  conversationStore.bindWidget(sessionId, widgetKey);
+  conversationStore.bindWidget(sessionId, widget.publicKey);
   conversationStore.appendMessage(sessionId, 'user', message);
 
   const existing = conversationStore.getConversationSummary(sessionId);
@@ -148,11 +150,11 @@ async function sendMessage(sessionId, message, clientIp, widgetKey) {
     if (!parseContactInfo(message) && !looksLikeContactAttempt(message)) {
       return addDetailsWhileAwaitingContact(sessionId);
     }
-    return submitTicket(sessionId, { ...existing, pendingContactMessage: message });
+    return submitTicket(sessionId, { ...existing, pendingContactMessage: message }, widget.publicKey);
   }
 
   if (existing.lookup_state) {
-    return ticketStatusFlow.handle(sessionId, message, existing, clientIp);
+    return ticketStatusFlow.handle(sessionId, message, existing, clientIp, widget.orgId);
   }
 
   // After a knowledge-base answer the customer either says it helped or it
@@ -194,7 +196,7 @@ async function sendMessage(sessionId, message, clientIp, widgetKey) {
   // a vague opener ("Report a problem"), which has nothing to search for yet.
   const noFieldsYet = ['category', 'priority', 'summary', 'description'].every((f) => existing[f] == null);
   if (!existing.kb_state && !escalatedFromKnowledge && noFieldsYet && !isVague(message)) {
-    const answer = await knowledgeFlow.tryAnswer(sessionId, message);
+    const answer = await knowledgeFlow.tryAnswer(sessionId, message, widget.publicKey);
     if (answer) return answer;
   }
 

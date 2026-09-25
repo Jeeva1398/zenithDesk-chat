@@ -2,7 +2,6 @@ const AppError = require('../utils/AppError');
 const logger = require('../utils/logger');
 
 const TICKET_API_BASE_URL = process.env.TICKET_API_BASE_URL;
-const TICKET_API_ORG_ID = Number(process.env.TICKET_API_ORG_ID || 1);
 const REQUEST_TIMEOUT_MS = 10000;
 
 // These calls are server-to-server, so as far as the main app is concerned
@@ -62,7 +61,9 @@ function recordOtpSend(now = Date.now()) {
   otpSends.push(now);
 }
 
-async function requestOtp(email, clientIp) {
+// orgId is the org of the widget the customer is using: an email address can
+// have tickets in more than one helpdesk, and a code only unlocks one.
+async function requestOtp(orgId, email, clientIp) {
   if (ceilingReached()) {
     logger.error(
       `OTP hourly ceiling of ${OTP_CEILING} reached - refusing further sends until the window clears`,
@@ -75,15 +76,15 @@ async function requestOtp(email, clientIp) {
   // quietly eat the hour's budget without a single send.
   const result = await postJson(
     '/customer-auth/request-otp',
-    { orgId: TICKET_API_ORG_ID, email },
+    { orgId, email },
     clientIp,
   );
   recordOtpSend();
   return result;
 }
 
-function verifyOtp(email, code, clientIp) {
-  return postJson('/customer-auth/verify-otp', { orgId: TICKET_API_ORG_ID, email, code }, clientIp);
+function verifyOtp(orgId, email, code, clientIp) {
+  return postJson('/customer-auth/verify-otp', { orgId, email, code }, clientIp);
 }
 
 module.exports = { requestOtp, verifyOtp, ceilingReached, recordOtpSend, OTP_CEILING };
