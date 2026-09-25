@@ -24,7 +24,6 @@ const PRIORITY_CHOICES = [
 
 const FIELD_CHOICES = { category: CATEGORY_CHOICES, priority: PRIORITY_CHOICES };
 
-const START_CHIPS = ['Report a problem', 'Check my ticket status'];
 const KNOWLEDGE_FEEDBACK_CHIPS = ['That solved it', 'I still need help'];
 
 // The order missing fields are asked in. What happened comes first: a category
@@ -61,8 +60,8 @@ function matchChoice(field, message) {
   return match ? match.value : null;
 }
 
-function chipsFor(after, { isGreeting }) {
-  if (isGreeting) return START_CHIPS;
+function chipsFor(after, { startChips }) {
+  if (startChips) return startChips;
 
   if (after.kb_state === 'awaiting_feedback') return KNOWLEDGE_FEEDBACK_CHIPS;
 
@@ -80,7 +79,9 @@ function chipsFor(after, { isGreeting }) {
   return [];
 }
 
-function buildExtras(before, after, { isGreeting = false } = {}) {
+// startChips is set when the reply was the greeting or a decline: the
+// conversation is back at its start, so the org's opening choices are offered.
+function buildExtras(before, after, { startChips = null } = {}) {
   const extras = {};
 
   if (before?.status !== 'confirmed' && after?.status === 'confirmed' && after.ticket_id) {
@@ -94,10 +95,10 @@ function buildExtras(before, after, { isGreeting = false } = {}) {
     if (sources.length > 0) extras.sources = sources;
   }
 
-  const chips = after ? chipsFor(after, { isGreeting }) : [];
+  const chips = after ? chipsFor(after, { startChips }) : [];
   if (chips.length > 0) extras.chips = chips;
 
   return extras;
 }
 
-module.exports = { buildExtras, matchChoice, nextQuestionField, START_CHIPS };
+module.exports = { buildExtras, matchChoice, nextQuestionField };

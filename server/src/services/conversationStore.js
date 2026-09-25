@@ -90,7 +90,8 @@ function getConversationSummary(sessionId) {
   return db
     .prepare(
       `SELECT status, ticket_id, category, priority, summary, description, needs_more_info, missing_fields, awaiting_contact,
-              lookup_state, kb_state, kb_outcome, kb_sources, customer_email, customer_jwt, customer_jwt_expires_at, last_shown_ticket_ids
+              lookup_state, kb_state, kb_outcome, kb_sources, customer_email, customer_jwt, customer_jwt_expires_at, last_shown_ticket_ids,
+              flow, enquiry_state, enquiry_message, enquiry_name, enquiry_email, enquiry_phone, enquiry_company, enquiry_id
        FROM conversations WHERE session_id = ?`,
     )
     .get(sessionId);
@@ -186,6 +187,36 @@ function setKnowledgeState(sessionId, { state, outcome = null, sources = null })
   ).run(state, outcome, sources ? JSON.stringify(sources) : null, sessionId);
 }
 
+// Which job the conversation is doing, decided on its first real message:
+// 'enquiry', 'support' or 'question'. A knowledge answer that does not help
+// carries on into the flow it came from, so this is what it reads.
+function setFlow(sessionId, flow) {
+  db.prepare('UPDATE conversations SET flow = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ?').run(
+    flow,
+    sessionId,
+  );
+}
+
+const ENQUIRY_COLUMNS = {
+  state: 'enquiry_state',
+  message: 'enquiry_message',
+  name: 'enquiry_name',
+  email: 'enquiry_email',
+  phone: 'enquiry_phone',
+  company: 'enquiry_company',
+  id: 'enquiry_id',
+};
+
+// Sets any of the enquiry fields; the ones not passed are left as they are.
+function updateEnquiry(sessionId, fields) {
+  const entries = Object.entries(fields).filter(([key]) => ENQUIRY_COLUMNS[key]);
+  if (entries.length === 0) return;
+  const assignments = entries.map(([key]) => `${ENQUIRY_COLUMNS[key]} = ?`).join(', ');
+  db.prepare(
+    `UPDATE conversations SET ${assignments}, updated_at = CURRENT_TIMESTAMP WHERE session_id = ?`,
+  ).run(...entries.map(([, value]) => (value === undefined ? null : value)), sessionId);
+}
+
 // Ends the status-lookup flow entirely (expired session, too many failed OTP
 // attempts) so the next message re-enters via the intent router from scratch.
 function clearLookupState(sessionId) {
@@ -219,4 +250,6 @@ module.exports = {
   setLastShownTicketIds,
   clearLookupState,
   setKnowledgeState,
+  setFlow,
+  updateEnquiry,
 };

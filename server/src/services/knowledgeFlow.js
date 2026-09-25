@@ -64,19 +64,25 @@ async function draftAnswer(question, passages) {
 // Tries to answer from the knowledge base. Returns the reply text when it
 // did, or null to let the ticket flow carry on as if this had never run - a
 // search or model failure must never cost the customer their ticket.
-async function tryAnswer(sessionId, question, widgetKey) {
-  let passages;
+async function tryAnswer(sessionId, question, widgetKey, { companyDescription = '' } = {}) {
+  let found;
   try {
-    passages = await knowledgeClient.search(widgetKey, question);
+    found = await knowledgeClient.search(widgetKey, question);
   } catch (err) {
     logger.warn(`Knowledge search failed, going straight to a ticket: ${err.message}`);
     return null;
   }
 
-  if (passages.length === 0 || passages[0].coverage < MIN_COVERAGE) {
+  if (found.length === 0 || found[0].coverage < MIN_COVERAGE) {
     conversationStore.setKnowledgeState(sessionId, { state: 'done', outcome: 'no_match' });
     return null;
   }
+
+  // The org's own description of itself rides along as one more passage, held
+  // to the same rules: quoted evidence or no answer.
+  const passages = companyDescription
+    ? [...found, { title: 'About us', text: companyDescription }]
+    : found;
 
   let draft;
   try {

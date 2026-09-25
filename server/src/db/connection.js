@@ -34,6 +34,14 @@ const NEW_CONVERSATION_COLUMNS = {
   kb_state: 'TEXT',
   kb_outcome: 'TEXT',
   kb_sources: 'TEXT',
+  flow: 'TEXT',
+  enquiry_state: 'TEXT',
+  enquiry_message: 'TEXT',
+  enquiry_name: 'TEXT',
+  enquiry_email: 'TEXT',
+  enquiry_phone: 'TEXT',
+  enquiry_company: 'TEXT',
+  enquiry_id: 'TEXT',
 };
 
 const existingColumns = new Set(db.prepare('PRAGMA table_info(conversations)').all().map((col) => col.name));

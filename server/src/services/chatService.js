@@ -6,6 +6,8 @@ const ticketStatusFlow = require('./ticketStatusFlow');
 const attachmentService = require('./attachmentService');
 const { matchChoice, nextQuestionField } = require('./replyExtras');
 const knowledgeFlow = require('./knowledgeFlow');
+const enquiryFlow = require('./enquiryFlow');
+const botConfig = require('./botConfig');
 const { EMAIL_PATTERN } = require('../utils/emailPattern');
 const logger = require('../utils/logger');
 
@@ -21,8 +23,8 @@ const CONTACT_RETRY = "That didn't include a valid email — could you share you
 const CONTACT_AFTER_DETAILS =
   "Thanks, I've added that to your ticket. To finish, could you share your name and an email address so we can send you updates?";
 const TICKET_SUBMIT_FAILED = "Sorry, I wasn't able to submit your ticket just now — please try again in a moment.";
-const GREETING_REPLY =
-  "Hi! I'm the ZenithDesk assistant — tell me what's going on and I'll get a support ticket started, or ask me to check on an existing ticket.";
+const ASK_QUESTION = 'Sure — what would you like to know?';
+const NO_ANSWER = "Sorry, I couldn't find an answer to that.";
 
 // Matches only a bare greeting with nothing else in the message, so a real
 // description that happens to start with "hi" (e.g. "hi, my invoice is
@@ -50,6 +52,14 @@ function historyForEscalation(history, message) {
     : [...withoutFeedback.slice(0, answerIndex), ...withoutFeedback.slice(answerIndex + 1)];
 }
 
+// The same idea for an enquiry: the question the knowledge answer was for,
+// plus anything the customer added when saying it did not help.
+function questionForEscalation(history, message) {
+  const answerIndex = history.map((m) => m.role).lastIndexOf('assistant');
+  const question = answerIndex > 0 ? history[answerIndex - 1].content : message;
+  return isVague(message) ? question : `${question}\n${message}`;
+}
+
 function isBareGreeting(message) {
   return GREETING_PATTERN.test(message.trim());
 }
@@ -72,6 +82,21 @@ function looksLikeContactAttempt(message) {
   return text.includes('@') || text.split(/\s+/).filter(Boolean).length <= CONTACT_ATTEMPT_MAX_WORDS;
 }
 
+function reply(sessionId, text) {
+  conversationStore.appendMessage(sessionId, 'assistant', text);
+  conversationStore.touchConversation(sessionId);
+  return text;
+}
+
+// Sessions whose latest reply puts the conversation back at its start - the
+// greeting, or a decline - so the controller offers the opening chips again.
+const startChipSessions = new Set();
+
+function replyWithStartChips(sessionId, text) {
+  startChipSessions.add(sessionId);
+  return reply(sessionId, text);
+}
+
 async function addDetailsWhileAwaitingContact(sessionId) {
   const extraction = await extractionService.extractTicketFields(
     conversationStore.getHistory(sessionId),
@@ -80,9 +105,7 @@ async function addDetailsWhileAwaitingContact(sessionId) {
   const merged = conversationStore.mergeExtractedFields(sessionId, extraction);
   logger.info(`Session ${sessionId}: details added while awaiting contact, priority=${merged.priority}`);
 
-  conversationStore.appendMessage(sessionId, 'assistant', CONTACT_AFTER_DETAILS);
-  conversationStore.touchConversation(sessionId);
-  return CONTACT_AFTER_DETAILS;
+  return reply(sessionId, CONTACT_AFTER_DETAILS);
 }
 
 function parseContactInfo(message) {
@@ -98,12 +121,10 @@ function parseContactInfo(message) {
 async function submitTicket(sessionId, conversation, widgetKey) {
   const contact = parseContactInfo(conversation.pendingContactMessage);
   if (!contact) {
-    conversationStore.appendMessage(sessionId, 'assistant', CONTACT_RETRY);
-    conversationStore.touchConversation(sessionId);
-    return CONTACT_RETRY;
+    return reply(sessionId, CONTACT_RETRY);
   }
 
-  let reply;
+  let text;
   try {
     const ticket = await ticketApiClient.createTicket(widgetKey, {
       customerName: contact.customerName,
@@ -120,30 +141,64 @@ async function submitTicket(sessionId, conversation, widgetKey) {
     await attachmentService
       .forwardPending(sessionId, ticket.id, widgetKey)
       .catch((err) => logger.warn(`Forwarding attachments for session ${sessionId} failed: ${err.message}`));
-    reply = `Thanks — I've created ticket #${ticket.id} for you: "${conversation.summary}". Our team will follow up shortly.`;
+    text = `Thanks — I've created ticket #${ticket.id} for you: "${conversation.summary}". Our team will follow up shortly.`;
   } catch (err) {
     logger.warn(`Ticket API call failed: ${err.message}`);
-    reply = TICKET_SUBMIT_FAILED;
+    text = TICKET_SUBMIT_FAILED;
   }
 
-  conversationStore.appendMessage(sessionId, 'assistant', reply);
-  conversationStore.touchConversation(sessionId);
-  return reply;
+  return reply(sessionId, text);
+}
+
+// Which flow a first message starts, given what the org has turned on.
+// 'status' and 'out' are one-turn answers; the rest are stored on the
+// conversation. A sales question in an org without enquiries is still a
+// question - the knowledge base, then a ticket, as it always was.
+function flowForIntent(intent, purposes) {
+  switch (intent) {
+    case 'check_status':
+      return purposes.status ? 'status' : 'out';
+    case 'enquiry':
+      return purposes.enquiry ? 'enquiry' : 'question';
+    case 'create_ticket':
+      return purposes.support ? 'support' : 'out';
+    default:
+      return 'question';
+  }
+}
+
+// Where "that didn't help" leads: back into the flow the conversation started
+// in when the org takes it, otherwise the other one, otherwise nowhere.
+function escalationTarget(flow, purposes) {
+  const order = flow === 'enquiry' ? ['enquiry', 'support'] : ['support', 'enquiry'];
+  return order.find((target) => purposes[target]) || null;
+}
+
+function outOfScope(sessionId, widget, prefix = '') {
+  return replyWithStartChips(sessionId, botConfig.outOfScopeFor(widget, prefix));
 }
 
 // widget is the resolved widget the message came through: its key, which the
-// main app finds the org from, and that org, for the OTP calls that take it.
+// main app finds the org from, that org, for the OTP calls that take it, and
+// the bot settings that decide which of the flows below are open.
 async function sendMessage(sessionId, message, clientIp, widget) {
+  startChipSessions.delete(sessionId);
   conversationStore.getOrCreateConversation(sessionId);
   conversationStore.bindWidget(sessionId, widget.publicKey);
   conversationStore.appendMessage(sessionId, 'user', message);
 
+  const { purposes, companyDescription } = botConfig.botOf(widget);
   const existing = conversationStore.getConversationSummary(sessionId);
+
   if (existing.status === 'confirmed') {
-    const reply = `You already have an open ticket (#${existing.ticket_id}) for this: "${existing.summary}". Our team will follow up on that one — let me know if this is a separate issue.`;
-    conversationStore.appendMessage(sessionId, 'assistant', reply);
-    conversationStore.touchConversation(sessionId);
-    return reply;
+    return reply(
+      sessionId,
+      `You already have an open ticket (#${existing.ticket_id}) for this: "${existing.summary}". Our team will follow up on that one — let me know if this is a separate issue.`,
+    );
+  }
+
+  if (existing.enquiry_state) {
+    return enquiryFlow.handle(sessionId, message, existing, widget);
   }
 
   if (existing.awaiting_contact) {
@@ -159,13 +214,25 @@ async function sendMessage(sessionId, message, clientIp, widget) {
 
   // After a knowledge-base answer the customer either says it helped or it
   // did not. Anything but a yes - "I still need help", or more detail - goes
-  // on to a ticket built from the whole conversation, question included.
+  // on to whichever flow the conversation started in, question included.
   let escalatedFromKnowledge = false;
   if (existing.kb_state === 'awaiting_feedback') {
     if (knowledgeFlow.isSolved(message)) {
       return knowledgeFlow.markSolved(sessionId);
     }
     conversationStore.setKnowledgeState(sessionId, { state: 'done', outcome: 'escalated' });
+    const target = escalationTarget(existing.flow, purposes);
+    if (target === 'enquiry') {
+      conversationStore.setFlow(sessionId, 'enquiry');
+      return enquiryFlow.startFromQuestion(
+        sessionId,
+        questionForEscalation(conversationStore.getHistory(sessionId), message),
+        { afterAnswer: true },
+      );
+    }
+    if (!target) {
+      return outOfScope(sessionId, widget, "Sorry that didn't help.");
+    }
     escalatedFromKnowledge = true;
   }
 
@@ -179,25 +246,50 @@ async function sendMessage(sessionId, message, clientIp, widget) {
     ['category', 'priority', 'summary', 'description'].some((field) => existing[field] != null);
 
   if (!conversationAlreadyStarted && !escalatedFromKnowledge && isBareGreeting(message)) {
-    conversationStore.appendMessage(sessionId, 'assistant', GREETING_REPLY);
-    conversationStore.touchConversation(sessionId);
-    return GREETING_REPLY;
+    return replyWithStartChips(sessionId, botConfig.greetingFor(widget));
   }
 
+  // A conversation from before flows existed was always a support one.
+  let flow = existing.flow || 'support';
   if (!conversationAlreadyStarted && !escalatedFromKnowledge) {
-    const intent = await intentRouter.classifyIntent(message);
-    if (intent === 'check_status') {
-      return ticketStatusFlow.start(sessionId);
-    }
+    const intent =
+      botConfig.chipIntent(message) || (await intentRouter.classifyIntent(message, { companyDescription }));
+    flow = flowForIntent(intent, purposes);
+    logger.info(`Session ${sessionId}: intent=${intent} flow=${flow}`);
+
+    if (flow === 'status') return ticketStatusFlow.start(sessionId);
+    if (flow === 'out') return outOfScope(sessionId, widget);
+    conversationStore.setFlow(sessionId, flow);
   }
 
-  // Once per conversation, on the first message that says what is wrong, the
-  // knowledge base gets a chance to answer before a ticket is started. Not on
-  // a vague opener ("Report a problem"), which has nothing to search for yet.
+  // Once per conversation, on the first message that says what is wrong or
+  // what is wanted, the knowledge base gets a chance to answer first. Not on a
+  // vague opener ("Report a problem"), which has nothing to search for yet.
   const noFieldsYet = ['category', 'priority', 'summary', 'description'].every((f) => existing[f] == null);
-  if (!existing.kb_state && !escalatedFromKnowledge && noFieldsYet && !isVague(message)) {
-    const answer = await knowledgeFlow.tryAnswer(sessionId, message, widget.publicKey);
+  if (purposes.knowledge && !existing.kb_state && !escalatedFromKnowledge && noFieldsYet && !isVague(message)) {
+    const answer = await knowledgeFlow.tryAnswer(sessionId, message, widget.publicKey, { companyDescription });
     if (answer) return answer;
+  }
+
+  if (flow === 'enquiry') {
+    return enquiryFlow.start(sessionId, message, { vague: isVague(message) });
+  }
+
+  // A question the knowledge base could not answer: a ticket when the org
+  // takes them (as it always did), otherwise an enquiry for the team to pick
+  // up, otherwise an honest "not here".
+  if (flow === 'question' && !escalatedFromKnowledge && !conversationAlreadyStarted && !purposes.support) {
+    if (isVague(message)) return reply(sessionId, ASK_QUESTION);
+    if (purposes.enquiry) {
+      conversationStore.setFlow(sessionId, 'enquiry');
+      return enquiryFlow.startFromQuestion(sessionId, message);
+    }
+    return outOfScope(sessionId, widget, NO_ANSWER);
+  }
+
+  // Everything below builds a ticket, which this org may not take.
+  if (!purposes.support) {
+    return outOfScope(sessionId, widget);
   }
 
   // A tapped chip (or the same word typed) answers the one question just
@@ -219,20 +311,23 @@ async function sendMessage(sessionId, message, clientIp, widget) {
     merged = conversationStore.mergeExtractedFields(sessionId, extraction);
   }
 
-  let reply;
+  let text;
   if (merged.needs_more_info) {
-    reply = buildFollowUpQuestion(merged.missing_fields);
+    text = buildFollowUpQuestion(merged.missing_fields);
   } else {
     conversationStore.setAwaitingContact(sessionId, true);
-    reply = CONTACT_REQUEST;
+    text = CONTACT_REQUEST;
   }
-
-  conversationStore.appendMessage(sessionId, 'assistant', reply);
-  conversationStore.touchConversation(sessionId);
 
   logger.info(`Session ${sessionId}: needs_more_info=${merged.needs_more_info} missing=${JSON.stringify(merged.missing_fields)}`);
 
-  return reply;
+  return reply(sessionId, text);
 }
 
-module.exports = { sendMessage, GREETING_REPLY };
+// Whether this session's latest reply should come with the start chips. Read
+// once, by the controller, straight after sendMessage.
+function offersStartChips(sessionId) {
+  return startChipSessions.delete(sessionId);
+}
+
+module.exports = { sendMessage, offersStartChips };

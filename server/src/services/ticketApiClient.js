@@ -38,6 +38,43 @@ async function createTicket(widgetKey, { customerName, customerEmail, subject, d
   }
 }
 
+// A 400 carries the main app's reason (a phone number it will not accept, say),
+// which the enquiry flow turns into a question rather than a dead end.
+class TicketApiError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function createEnquiry(widgetKey, { name, email, phone, company, message }) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${TICKET_API_BASE_URL}/enquiries`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(widgetKey),
+      },
+      signal: controller.signal,
+      body: JSON.stringify({ name, email, phone, company, message }),
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new TicketApiError(res.status, body.error || `Enquiry request failed: ${res.status}`);
+    }
+
+    const enquiry = await res.json();
+    logger.info(`Created ZenithDesk enquiry #${enquiry.id} via ticket API`);
+    return enquiry;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // Sent as multipart, the way the main app's upload route expects it. The main
 // app re-checks the file's type and the org's attachment settings itself, so
 // nothing validated here is taken on trust there.
@@ -65,4 +102,4 @@ async function uploadAttachment(widgetKey, ticketId, { buffer, filename, mimeTyp
   }
 }
 
-module.exports = { createTicket, uploadAttachment };
+module.exports = { createTicket, createEnquiry, uploadAttachment, TicketApiError };

@@ -3,8 +3,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const SESSION_STORAGE_KEY = 'zenithdesk-chatbot-session-id';
 
 // Offered under the widget's own greeting, which is shown locally before the
-// server has been asked anything. Same labels the server offers after "hi".
-const START_CHIPS = ['Report a problem', 'Check my ticket status'];
+// server has been asked anything. The server sends them with the config, since
+// they depend on what the org's bot does; an older server sends none, and gets
+// the two the widget always offered.
+const DEFAULT_START_CHIPS = ['Report a problem', 'Check my ticket status'];
 
 function createSessionId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -46,15 +48,17 @@ function getOrCreateSessionId(widgetKey) {
   return created;
 }
 
-function greetingMessages(greeting, withChips) {
+function greetingMessages(greeting, chips) {
   if (!greeting) return [];
-  return [{ id: 'greeting', role: 'assistant', content: greeting, ...(withChips ? { chips: START_CHIPS } : {}) }];
+  return [{ id: 'greeting', role: 'assistant', content: greeting, ...(chips?.length ? { chips } : {}) }];
 }
 
-function useChatSession({ api, widgetKey, greeting }) {
+function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_CHIPS }) {
+  const chipsRef = useRef(startChips);
+  chipsRef.current = startChips;
   const [sessionId, setSessionId] = useState(() => getOrCreateSessionId(widgetKey));
   const nextMessageId = useRef(0);
-  const [messages, setMessages] = useState(() => greetingMessages(greeting, true));
+  const [messages, setMessages] = useState(() => greetingMessages(greeting, chipsRef.current));
   const [ticket, setTicket] = useState(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [isSending, setIsSending] = useState(false);
@@ -72,7 +76,7 @@ function useChatSession({ api, widgetKey, greeting }) {
       .getHistory(sessionId)
       .then((history) => {
         if (cancelled) return;
-        setMessages([...greetingMessages(greeting, history.messages.length === 0), ...history.messages]);
+        setMessages([...greetingMessages(greeting, history.messages.length === 0 ? chipsRef.current : null), ...history.messages]);
         setTicket(history.ticket);
       })
       .catch(() => {
@@ -147,7 +151,7 @@ function useChatSession({ api, widgetKey, greeting }) {
     writeStorage(storageKeyFor(widgetKey), created);
     setError(null);
     setTicket(null);
-    setMessages(greetingMessages(greeting, true));
+    setMessages(greetingMessages(greeting, chipsRef.current));
     setSessionId(created);
   }, [widgetKey, greeting]);
 

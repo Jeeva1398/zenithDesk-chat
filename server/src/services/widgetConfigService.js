@@ -1,4 +1,5 @@
 const AppError = require('../utils/AppError');
+const { startChips } = require('./botConfig');
 const logger = require('../utils/logger');
 
 const TICKET_API_BASE_URL = process.env.TICKET_API_BASE_URL;
@@ -73,10 +74,11 @@ async function getWidgetConfig(publicKey, clientIp) {
   return config;
 }
 
-// What the widget itself is given: how to look and what to offer. The org id
-// and the allowlist stay on the server.
+// What the widget itself is given: how to look and what to offer. The org id,
+// the allowlist and the bot's wording stay on the server; the widget only
+// needs the opening chips, which depend on what the bot is set up to do.
 function toPublicConfig(config) {
-  return { theme: config.theme, tools: config.tools };
+  return { theme: config.theme, tools: config.tools, startChips: startChips(config) };
 }
 
 module.exports = { getWidgetConfig, toPublicConfig };

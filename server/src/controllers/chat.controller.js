@@ -3,6 +3,7 @@ const conversationStore = require('../services/conversationStore');
 const attachmentService = require('../services/attachmentService');
 const { toPublicConfig } = require('../services/widgetConfigService');
 const { buildExtras } = require('../services/replyExtras');
+const { startChips } = require('../services/botConfig');
 const { buildTranscript } = require('../services/transcriptService');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/AppError');
@@ -32,7 +33,9 @@ const sendMessage = catchAsync(async (req, res) => {
   const reply = await chatService.sendMessage(sessionId, message, req.ip, req.widget);
   const after = conversationStore.getConversationSummary(sessionId);
 
-  const extras = buildExtras(before, after, { isGreeting: reply === chatService.GREETING_REPLY });
+  const extras = buildExtras(before, after, {
+    startChips: chatService.offersStartChips(sessionId) ? startChips(req.widget) : null,
+  });
   // Stored with the reply, so a reloaded widget can redraw the ticket card and
   // the chips instead of just the text.
   if (Object.keys(extras).length > 0) {

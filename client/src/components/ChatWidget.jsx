@@ -60,7 +60,7 @@ function ChatWidgetPanel({ api, widgetKey, config }) {
     setIsOpenState(open);
     writeOpenState(openKey, open);
   };
-  const session = useChatSession({ api, widgetKey, greeting: theme.greeting });
+  const session = useChatSession({ api, widgetKey, greeting: theme.greeting, startChips: config.startChips });
   const { messages, sendMessage, uploadFile, isSending, isUploading, error } = session;
 
   const attachments = tools.attachments.enabled
