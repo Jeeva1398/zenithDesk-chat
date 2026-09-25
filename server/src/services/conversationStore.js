@@ -90,7 +90,7 @@ function getConversationSummary(sessionId) {
   return db
     .prepare(
       `SELECT status, ticket_id, category, priority, summary, description, needs_more_info, missing_fields, awaiting_contact,
-              lookup_state, customer_email, customer_jwt, customer_jwt_expires_at, last_shown_ticket_ids
+              lookup_state, kb_state, kb_outcome, kb_sources, customer_email, customer_jwt, customer_jwt_expires_at, last_shown_ticket_ids
        FROM conversations WHERE session_id = ?`,
     )
     .get(sessionId);
@@ -174,6 +174,18 @@ function setLastShownTicketIds(sessionId, ticketIds) {
   ).run(JSON.stringify(ticketIds), sessionId);
 }
 
+// Where the conversation stands with the knowledge base: awaiting_feedback
+// after an answer, done once the customer has said whether it helped (or
+// there was nothing to answer from). outcome says which, for reporting later.
+function setKnowledgeState(sessionId, { state, outcome = null, sources = null }) {
+  db.prepare(
+    `UPDATE conversations
+     SET kb_state = ?, kb_outcome = COALESCE(?, kb_outcome), kb_sources = COALESCE(?, kb_sources),
+         updated_at = CURRENT_TIMESTAMP
+     WHERE session_id = ?`,
+  ).run(state, outcome, sources ? JSON.stringify(sources) : null, sessionId);
+}
+
 // Ends the status-lookup flow entirely (expired session, too many failed OTP
 // attempts) so the next message re-enters via the intent router from scratch.
 function clearLookupState(sessionId) {
@@ -206,4 +218,5 @@ module.exports = {
   setCustomerAuth,
   setLastShownTicketIds,
   clearLookupState,
+  setKnowledgeState,
 };

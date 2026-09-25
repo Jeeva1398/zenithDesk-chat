@@ -5,6 +5,7 @@ const intentRouter = require('./intentRouter');
 const ticketStatusFlow = require('./ticketStatusFlow');
 const attachmentService = require('./attachmentService');
 const { matchChoice, nextQuestionField } = require('./replyExtras');
+const knowledgeFlow = require('./knowledgeFlow');
 const { EMAIL_PATTERN } = require('../utils/emailPattern');
 const logger = require('../utils/logger');
 
@@ -27,6 +28,27 @@ const GREETING_REPLY =
 // description that happens to start with "hi" (e.g. "hi, my invoice is
 // wrong") still falls through to normal intent classification/extraction.
 const GREETING_PATTERN = /^(hi|hello|hey|hiya|yo|sup|greetings|good\s?(morning|afternoon|evening))[!.,\s]*$/i;
+
+// Same threshold the extraction pass uses for a first message too short to
+// work from.
+const VAGUE_MAX_WORDS = 4;
+
+function isVague(message) {
+  return message.trim().split(/\s+/).filter(Boolean).length <= VAGUE_MAX_WORDS;
+}
+
+// The ticket for "that didn't help" is about the original question, so the
+// extraction pass is shown that - not the knowledge-base answer, which the
+// model would otherwise mine for details the customer never gave, and not a
+// bare "I still need help", which reads as the vague complaint it is told to
+// refuse. Detail the customer added along with it is kept.
+function historyForEscalation(history, message) {
+  const withoutFeedback = isVague(message) ? history.slice(0, -1) : history;
+  const answerIndex = withoutFeedback.map((m) => m.role).lastIndexOf('assistant');
+  return answerIndex === -1
+    ? withoutFeedback
+    : [...withoutFeedback.slice(0, answerIndex), ...withoutFeedback.slice(answerIndex + 1)];
+}
 
 function isBareGreeting(message) {
   return GREETING_PATTERN.test(message.trim());
@@ -133,6 +155,18 @@ async function sendMessage(sessionId, message, clientIp, widgetKey) {
     return ticketStatusFlow.handle(sessionId, message, existing, clientIp);
   }
 
+  // After a knowledge-base answer the customer either says it helped or it
+  // did not. Anything but a yes - "I still need help", or more detail - goes
+  // on to a ticket built from the whole conversation, question included.
+  let escalatedFromKnowledge = false;
+  if (existing.kb_state === 'awaiting_feedback') {
+    if (knowledgeFlow.isSolved(message)) {
+      return knowledgeFlow.markSolved(sessionId);
+    }
+    conversationStore.setKnowledgeState(sessionId, { state: 'done', outcome: 'escalated' });
+    escalatedFromKnowledge = true;
+  }
+
   // needs_more_info is NULL until the first extraction pass runs, so this is
   // true only on the very first turn — once a ticket-creation attempt has
   // started, later single-word replies (e.g. "account") must never be
@@ -142,17 +176,26 @@ async function sendMessage(sessionId, message, clientIp, widgetKey) {
     existing.needs_more_info != null ||
     ['category', 'priority', 'summary', 'description'].some((field) => existing[field] != null);
 
-  if (!conversationAlreadyStarted && isBareGreeting(message)) {
+  if (!conversationAlreadyStarted && !escalatedFromKnowledge && isBareGreeting(message)) {
     conversationStore.appendMessage(sessionId, 'assistant', GREETING_REPLY);
     conversationStore.touchConversation(sessionId);
     return GREETING_REPLY;
   }
 
-  if (!conversationAlreadyStarted) {
+  if (!conversationAlreadyStarted && !escalatedFromKnowledge) {
     const intent = await intentRouter.classifyIntent(message);
     if (intent === 'check_status') {
       return ticketStatusFlow.start(sessionId);
     }
+  }
+
+  // Once per conversation, on the first message that says what is wrong, the
+  // knowledge base gets a chance to answer before a ticket is started. Not on
+  // a vague opener ("Report a problem"), which has nothing to search for yet.
+  const noFieldsYet = ['category', 'priority', 'summary', 'description'].every((f) => existing[f] == null);
+  if (!existing.kb_state && !escalatedFromKnowledge && noFieldsYet && !isVague(message)) {
+    const answer = await knowledgeFlow.tryAnswer(sessionId, message);
+    if (answer) return answer;
   }
 
   // A tapped chip (or the same word typed) answers the one question just
@@ -164,9 +207,13 @@ async function sendMessage(sessionId, message, clientIp, widgetKey) {
   if (choice) {
     merged = conversationStore.mergeExtractedFields(sessionId, { [askedField]: choice });
   } else {
-    const history = conversationStore.getHistory(sessionId);
     const knownFields = conversationStore.getKnownFields(sessionId);
-    const extraction = await extractionService.extractTicketFields(history, knownFields);
+    const history = escalatedFromKnowledge
+      ? historyForEscalation(conversationStore.getHistory(sessionId), message)
+      : conversationStore.getHistory(sessionId);
+    const extraction = await extractionService.extractTicketFields(history, knownFields, {
+      skipVagueCheck: escalatedFromKnowledge,
+    });
     merged = conversationStore.mergeExtractedFields(sessionId, extraction);
   }
 

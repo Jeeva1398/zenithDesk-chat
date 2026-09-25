@@ -20,7 +20,7 @@ function buildTranscript(sessionId) {
   const since = truncated ? messages[0].created_at : null;
 
   const entries = messages.map((m) => {
-    const { ticket, chips } = parseMeta(m.meta);
+    const { ticket, chips, sources } = parseMeta(m.meta);
     return {
       id: `m${m.id}`,
       at: m.created_at,
@@ -28,6 +28,7 @@ function buildTranscript(sessionId) {
       content: m.content,
       ...(ticket ? { ticket } : {}),
       ...(chips ? { chips } : {}),
+      ...(sources ? { sources } : {}),
     };
   });
 

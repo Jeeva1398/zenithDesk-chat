@@ -30,7 +30,9 @@ function MessageList({ messages, isSending, onChipSelect, ticket, onStartOver })
             <TicketConfirmation key={message.id} ticketId={message.ticket.id} summary={message.ticket.summary} />
           );
         }
-        return <MessageBubble key={message.id} role={message.role} content={message.content} />;
+        return (
+          <MessageBubble key={message.id} role={message.role} content={message.content} sources={message.sources} />
+        );
       })}
       {/* Only the latest reply's chips: an older question has already been
           answered, and tapping its options would answer it again. */}

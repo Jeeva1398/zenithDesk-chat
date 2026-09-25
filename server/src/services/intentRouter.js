@@ -12,13 +12,19 @@ const STATUS_KEYWORDS = [
   'update on my',
 ];
 
-const IntentSchema = z.object({ intent: z.enum(['create_ticket', 'check_status']) });
+// ask_question exists so that a how-to question ("how long is the reset link
+// valid?") is not forced into one of the other two. With only two labels the
+// model had to pick, and it sometimes picked check_status - sending someone
+// with a simple question off to verify their email. It is handled exactly
+// like create_ticket: the knowledge base answers first, a ticket if it cannot.
+const IntentSchema = z.object({ intent: z.enum(['create_ticket', 'check_status', 'ask_question']) });
 
 const INTENT_SYSTEM_PROMPT = `Classify the customer's message as one of:
 - "create_ticket" - they want to report a new issue or problem
-- "check_status" - they want to check on a ticket they already created
+- "check_status" - they want to know what is happening with a support ticket they ALREADY created (e.g. "any update on my ticket?", "what's the status of #123?")
+- "ask_question" - they are asking how something works or a general question about the product or service
 
-Output ONLY a JSON object: {"intent": "create_ticket" | "check_status"}`;
+Output ONLY a JSON object: {"intent": "create_ticket" | "check_status" | "ask_question"}`;
 
 function stripCodeFences(raw) {
   return raw

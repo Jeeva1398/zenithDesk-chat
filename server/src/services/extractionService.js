@@ -99,8 +99,11 @@ function isTooVagueForFirstTurn(history, knownFields) {
   return wordCount > 0 && wordCount <= MIN_WORD_COUNT_FOR_LLM;
 }
 
-async function extractTicketFields(history, knownFields) {
-  if (isTooVagueForFirstTurn(history, knownFields)) {
+// skipVagueCheck is for a turn whose substance is earlier in the history -
+// "I still need help" after a knowledge-base answer is four words, but the
+// question it refers to is already there to extract from.
+async function extractTicketFields(history, knownFields, { skipVagueCheck = false } = {}) {
+  if (!skipVagueCheck && isTooVagueForFirstTurn(history, knownFields)) {
     logger.info('First message too short/vague to extract from - skipping LLM call, asking for more detail');
     return {
       category: null,

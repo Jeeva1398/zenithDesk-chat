@@ -25,6 +25,7 @@ const PRIORITY_CHOICES = [
 const FIELD_CHOICES = { category: CATEGORY_CHOICES, priority: PRIORITY_CHOICES };
 
 const START_CHIPS = ['Report a problem', 'Check my ticket status'];
+const KNOWLEDGE_FEEDBACK_CHIPS = ['That solved it', 'I still need help'];
 
 // The order missing fields are asked in. What happened comes first: a category
 // or priority chip means nothing before the customer has said what is wrong,
@@ -63,6 +64,8 @@ function matchChoice(field, message) {
 function chipsFor(after, { isGreeting }) {
   if (isGreeting) return START_CHIPS;
 
+  if (after.kb_state === 'awaiting_feedback') return KNOWLEDGE_FEEDBACK_CHIPS;
+
   if (after.lookup_state === 'verified_lookup') {
     return parseList(after.last_shown_ticket_ids)
       .slice(0, MAX_TICKET_CHIPS)
@@ -82,6 +85,13 @@ function buildExtras(before, after, { isGreeting = false } = {}) {
 
   if (before?.status !== 'confirmed' && after?.status === 'confirmed' && after.ticket_id) {
     extras.ticket = { id: after.ticket_id, summary: after.summary };
+  }
+
+  // The articles an answer came from, shown under it so the customer can tell
+  // it is the company's own help text rather than something made up.
+  if (before?.kb_state !== 'awaiting_feedback' && after?.kb_state === 'awaiting_feedback') {
+    const sources = parseList(after.kb_sources);
+    if (sources.length > 0) extras.sources = sources;
   }
 
   const chips = after ? chipsFor(after, { isGreeting }) : [];

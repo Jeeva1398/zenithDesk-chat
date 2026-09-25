@@ -103,8 +103,8 @@ function useChatSession({ api, widgetKey, greeting }) {
       setIsSending(true);
 
       try {
-        const { reply, ticket: created, chips } = await api.sendMessage(sessionId, trimmed);
-        appendMessage({ role: 'assistant', content: reply, ticket: created, chips });
+        const { reply, ticket: created, chips, sources } = await api.sendMessage(sessionId, trimmed);
+        appendMessage({ role: 'assistant', content: reply, ticket: created, chips, sources });
         if (created) setTicket(created);
       } catch (err) {
         setError(err.message);

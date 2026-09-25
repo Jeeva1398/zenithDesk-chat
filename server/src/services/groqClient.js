@@ -10,6 +10,19 @@ const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 const GROQ_REASONING_EFFORT = process.env.GROQ_REASONING_EFFORT ?? 'low';
 const REQUEST_TIMEOUT_MS = Number(process.env.GROQ_TIMEOUT_MS || 15000);
 
+// Answers written to customers from the knowledge base get the larger model
+// and more reasoning. The small one misread "refunds for cancelled plans are
+// not covered here" as "we do not offer refunds" about one time in five - a
+// confident wrong answer about policy. Intent and extraction stay on
+// GROQ_MODEL: they are most of the calls, and structured work it does well.
+const TIERS = {
+  default: { model: GROQ_MODEL, reasoningEffort: GROQ_REASONING_EFFORT },
+  answer: {
+    model: process.env.GROQ_ANSWER_MODEL || 'openai/gpt-oss-120b',
+    reasoningEffort: process.env.GROQ_ANSWER_REASONING_EFFORT ?? 'medium',
+  },
+};
+
 class GroqError extends Error {
   constructor(message, { status, retryAfterMs } = {}) {
     super(message);
@@ -30,18 +43,20 @@ function parseRetryAfter(res) {
 }
 
 // Takes the same arguments as ollamaClient.chat, so the callers do not care
-// which one answers. Ollama's option names are translated here.
-async function chat({ messages, format, options = {} }) {
+// which one answers. Ollama's option names are translated here; `tier` picks
+// the model, and Ollama, having one, ignores it.
+async function chat({ messages, format, options = {}, tier = 'default' }) {
   if (!isConfigured()) {
     throw new GroqError('GROQ_API_KEY is not set');
   }
 
-  const body = { model: GROQ_MODEL, messages, stream: false };
+  const { model, reasoningEffort } = TIERS[tier] || TIERS.default;
+  const body = { model, messages, stream: false };
   if (options.temperature !== undefined) body.temperature = options.temperature;
   if (options.num_predict !== undefined) body.max_completion_tokens = options.num_predict;
   if (format === 'json') body.response_format = { type: 'json_object' };
-  if (GROQ_REASONING_EFFORT && GROQ_MODEL.startsWith('openai/gpt-oss')) {
-    body.reasoning_effort = GROQ_REASONING_EFFORT;
+  if (reasoningEffort && model.startsWith('openai/gpt-oss')) {
+    body.reasoning_effort = reasoningEffort;
   }
 
   const controller = new AbortController();
@@ -92,15 +107,19 @@ async function ping() {
       return;
     }
     const { data = [] } = await res.json();
-    if (!data.some((model) => model.id === GROQ_MODEL)) {
+    const available = new Set(data.map((m) => m.id));
+    const missing = Object.entries({ GROQ_MODEL, GROQ_ANSWER_MODEL: TIERS.answer.model }).filter(
+      ([, id]) => !available.has(id),
+    );
+    if (missing.length > 0) {
       logger.error(
-        `Groq model "${GROQ_MODEL}" is not in the account's model list - set GROQ_MODEL to one of: ${data
-          .map((m) => m.id)
-          .join(', ')}`,
+        `Groq model not in the account's model list: ${missing
+          .map(([name, id]) => `${name}="${id}"`)
+          .join(', ')} - available: ${[...available].join(', ')}`,
       );
       return;
     }
-    logger.info(`Groq OK (model: ${GROQ_MODEL})`);
+    logger.info(`Groq OK (model: ${GROQ_MODEL}, answers: ${TIERS.answer.model})`);
   } catch (err) {
     logger.warn(`Groq check failed (continuing): ${err.message}`);
   }

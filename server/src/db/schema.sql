@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS conversations (
   customer_jwt_expires_at DATETIME,
   last_shown_ticket_ids TEXT,
   widget_key TEXT,
+  kb_state TEXT,
+  kb_outcome TEXT,
+  kb_sources TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   confirmed_at DATETIME
