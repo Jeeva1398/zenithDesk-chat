@@ -53,6 +53,17 @@ app.use(express.json({ limit: '32kb' }));
 app.use(morgan.successHandler);
 app.use(morgan.errorHandler);
 
+// This server is an API for the widget, with no page of its own. Someone who
+// opens its address in a browser - from a resume link, say - is sent to the
+// site that shows the widget working, rather than a bare "Cannot GET /".
+app.get('/', (req, res) => {
+  if (process.env.CHAT_HOME_URL) {
+    res.redirect(302, process.env.CHAT_HOME_URL);
+    return;
+  }
+  res.status(200).json({ service: 'ZenithDesk chat server', status: 'ok' });
+});
+
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
