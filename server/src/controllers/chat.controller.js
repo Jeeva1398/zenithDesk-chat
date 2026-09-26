@@ -1,12 +1,14 @@
 const chatService = require('../services/chatService');
 const conversationStore = require('../services/conversationStore');
 const attachmentService = require('../services/attachmentService');
+const ticketApiClient = require('../services/ticketApiClient');
 const { toPublicConfig } = require('../services/widgetConfigService');
 const { buildExtras } = require('../services/replyExtras');
 const { startChips } = require('../services/botConfig');
 const { buildTranscript } = require('../services/transcriptService');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/AppError');
+const logger = require('../utils/logger');
 
 function requireSessionId(sessionId) {
   if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 100) {
@@ -91,6 +93,39 @@ const sendFeedback = catchAsync(async (req, res) => {
   res.status(204).end();
 });
 
+const ENQUIRY_FIELDS = ['name', 'email', 'phone', 'company', 'message'];
+
+// Takes a contact form's fields and files them as an enquiry through the main
+// app, which checks them properly (name, plus an email or a phone) and owns
+// the org's alert email. Only the named fields are passed on.
+const submitEnquiry = catchAsync(async (req, res) => {
+  const body = req.body || {};
+
+  // Honeypot: a field real visitors never see. Bots that fill every input
+  // get a normal-looking success and nothing is filed.
+  if (typeof body.website === 'string' && body.website.trim()) {
+    res.status(201).json({ ok: true });
+    return;
+  }
+
+  const fields = {};
+  for (const field of ENQUIRY_FIELDS) {
+    if (body[field] === undefined || body[field] === null || body[field] === '') continue;
+    if (typeof body[field] !== 'string') throw new AppError(`${field} must be text`, 400);
+    fields[field] = body[field];
+  }
+
+  try {
+    const enquiry = await ticketApiClient.createEnquiry(req.widget.publicKey, { ...fields, source: 'form' });
+    res.status(201).json({ ok: true, id: enquiry.id });
+  } catch (err) {
+    if (err.status === 400) throw new AppError(err.message, 400);
+    if (err.status === 409) throw new AppError('This site is not taking messages right now.', 403);
+    logger.error(`Contact form enquiry failed: ${err.message}`);
+    throw new AppError('Your message could not be sent just now - please try again shortly.', 502);
+  }
+});
+
 const uploadAttachment = catchAsync(async (req, res) => {
   const sessionId = requireSessionId(req.body.sessionId);
 
@@ -107,4 +142,4 @@ const uploadAttachment = catchAsync(async (req, res) => {
   res.status(201).json(attachment);
 });
 
-module.exports = { getConfig, sendMessage, getHistory, sendFeedback, uploadAttachment };
+module.exports = { getConfig, sendMessage, getHistory, sendFeedback, submitEnquiry, uploadAttachment };

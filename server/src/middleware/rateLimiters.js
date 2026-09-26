@@ -40,4 +40,12 @@ const attachmentLimiter = rateLimit({
   handler: rejectWith('Too many files - please wait a few minutes before attaching more.'),
 });
 
-module.exports = { chatLimiter, configLimiter, attachmentLimiter };
+// A contact form posts once; a person resending a few times is plenty.
+const enquiryLimiter = rateLimit({
+  ...common,
+  windowMs: 10 * 60 * 1000,
+  limit: 5,
+  handler: rejectWith('Too many messages sent - please wait a few minutes and try again.'),
+});
+
+module.exports = { chatLimiter, configLimiter, attachmentLimiter, enquiryLimiter };
