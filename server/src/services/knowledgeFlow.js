@@ -3,6 +3,7 @@ const conversationStore = require('./conversationStore');
 const knowledgeClient = require('./knowledgeClient');
 const llmClient = require('./llmClient');
 const logger = require('../utils/logger');
+const { progress } = require('../utils/progress');
 
 // Below this share of the question's words found in the best passage, the
 // match is too thin to be worth a model call. Kept low on purpose: keyword
@@ -66,6 +67,7 @@ async function draftAnswer(question, passages) {
 // search or model failure must never cost the customer their ticket.
 async function tryAnswer(sessionId, question, widgetKey, { companyDescription = '' } = {}) {
   let found;
+  progress('searching');
   try {
     found = await knowledgeClient.search(widgetKey, question);
   } catch (err) {

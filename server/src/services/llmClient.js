@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const { progress } = require('../utils/progress');
 const groqClient = require('./groqClient');
 const ollamaClient = require('./ollamaClient');
 
@@ -37,6 +38,8 @@ async function callFallback(args, reason) {
 // providers fail the error propagates, and the callers' own fallbacks (the
 // keyword intent match, the rule-based classifier) take over as before.
 async function chat(args) {
+  // A knowledge-base answer is the one the visitor reads word for word.
+  progress(args.tier === 'answer' ? 'writing' : 'thinking');
   if (hasFallback() && Date.now() < primaryCoolingUntil) {
     return callFallback(args, 'rate limited, cooling down');
   }

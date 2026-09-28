@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const { progress } = require('../utils/progress');
 
 const TICKET_API_BASE_URL = process.env.TICKET_API_BASE_URL;
 const TICKET_API_TOKEN = process.env.TICKET_API_TOKEN;
@@ -12,6 +13,7 @@ function authHeaders(widgetKey) {
 }
 
 async function createTicket(widgetKey, { customerName, customerEmail, subject, description, category, priority }) {
+  progress('filing');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -48,6 +50,7 @@ class TicketApiError extends Error {
 }
 
 async function createEnquiry(widgetKey, { name, email, phone, company, message, source }) {
+  progress('sending');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -135,6 +138,7 @@ async function liveChatRequest(widgetKey, clientIp, path, { method = 'GET', body
 
 // 503 when nobody is signed in to answer, 409 when the org has handoff off.
 function openLiveChat(widgetKey, clientIp, { sessionId, transcript, visitorName, visitorEmail }) {
+  progress('connecting');
   return liveChatRequest(widgetKey, clientIp, '', {
     method: 'POST',
     body: { sessionId, transcript, visitorName, visitorEmail },

@@ -5,7 +5,7 @@ import TypingIndicator from './TypingIndicator';
 import AttachmentBubble from './AttachmentBubble';
 import QuickReplies from './QuickReplies';
 
-function MessageList({ theme, messages, isSending, onChipSelect, onRate, ticket, onStartOver, handoff }) {
+function MessageList({ theme, messages, isSending, sendingStage, onChipSelect, onRate, ticket, onStartOver, handoff }) {
   const bottomRef = useRef(null);
   const lastMessage = messages[messages.length - 1];
 
@@ -57,7 +57,7 @@ function MessageList({ theme, messages, isSending, onChipSelect, onRate, ticket,
           </button>
         </div>
       )}
-      {isSending && !handoff && <TypingIndicator theme={theme} />}
+      {isSending && !handoff && <TypingIndicator theme={theme} stage={sendingStage} />}
       {handoff?.state === 'waiting' && !isSending && (
         <div className="zd-message-event" role="status">
           Waiting for someone from the team to join…

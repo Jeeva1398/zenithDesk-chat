@@ -9,6 +9,7 @@ const handoffFlow = require('../services/handoffFlow');
 const analyticsReporter = require('../services/analyticsReporter');
 const { buildTranscript, toEntry } = require('../services/transcriptService');
 const catchAsync = require('../utils/catchAsync');
+const { withProgress } = require('../utils/progress');
 const AppError = require('../utils/AppError');
 const logger = require('../utils/logger');
 
@@ -26,13 +27,16 @@ const getConfig = catchAsync(async (req, res) => {
   res.json(toPublicConfig(req.widget));
 });
 
-const sendMessage = catchAsync(async (req, res) => {
-  const { sessionId, message } = req.body;
-
+function readMessage(body) {
+  const { sessionId, message } = body || {};
   if (typeof sessionId !== 'string' || !sessionId.trim() || typeof message !== 'string' || !message.trim()) {
     throw new AppError('sessionId and message are required', 400);
   }
+  return { sessionId, message };
+}
 
+// The bot's answer to one message, as both /chat and /chat/stream send it.
+async function answer(req, { sessionId, message }) {
   const before = conversationStore.getConversationSummary(sessionId);
   const isFirst = !conversationStore.hasUserMessages(sessionId);
   const reply = await chatService.sendMessage(sessionId, message, req.ip, req.widget);
@@ -41,10 +45,7 @@ const sendMessage = catchAsync(async (req, res) => {
   analyticsReporter.recordTurn(req.widget.publicKey, sessionId, before, after, message, { isFirst });
 
   // Sent on to a person: nothing from the bot, just where the chat stands.
-  if (reply === null) {
-    res.json({ reply: null, handoff });
-    return;
-  }
+  if (reply === null) return { reply: null, handoff };
 
   const extras = buildExtras(before, after, {
     startChips: chatService.offersStartChips(sessionId) ? startChips(req.widget) : null,
@@ -59,7 +60,40 @@ const sendMessage = catchAsync(async (req, res) => {
   // `reply` stays a plain string, so an older widget keeps working; the
   // extras are additive. messageId is what the widget rates the reply by.
   const latestId = conversationStore.getLatestAssistantMessageId(sessionId);
-  res.json({ reply, ...extras, ...(latestId ? { messageId: `m${latestId}` } : {}), handoff });
+  return { reply, ...extras, ...(latestId ? { messageId: `m${latestId}` } : {}), handoff };
+}
+
+const sendMessage = catchAsync(async (req, res) => {
+  res.json(await answer(req, readMessage(req.body)));
+});
+
+// The same answer, sent as server-sent events: a "status" event each time the
+// bot moves on to something slow (searching the help articles, writing an
+// answer, raising a ticket), then one "reply" event with what /chat returns.
+// The reply is only sent once it is final - a knowledge-base answer has passed
+// its evidence check - so nothing shown is ever taken back.
+const streamMessage = catchAsync(async (req, res) => {
+  const input = readMessage(req.body);
+
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-store',
+    // nginx would otherwise hold the events back until the reply is done.
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+
+  try {
+    const payload = await withProgress((stage) => send('status', { stage }), () => answer(req, input));
+    send('reply', payload);
+  } catch (err) {
+    // Too late for an HTTP status, so the error travels as an event.
+    const status = err.statusCode || err.status || 500;
+    if (status >= 500) logger.error(`Streaming a reply for session ${input.sessionId} failed: ${err.message}`);
+    send('error', { status, error: status >= 500 ? 'Something went wrong. Please try again.' : err.message });
+  }
+  res.end();
 });
 
 function requireOwnConversation(sessionId, widget) {
@@ -196,6 +230,7 @@ const uploadAttachment = catchAsync(async (req, res) => {
 module.exports = {
   getConfig,
   sendMessage,
+  streamMessage,
   getHistory,
   getUpdates,
   endHandoff,

@@ -10,6 +10,30 @@ async function readJson(res) {
   return data;
 }
 
+// Reads a server-sent event stream, calling onEvent(name, data) per event.
+async function readEvents(res, onEvent) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let end;
+    while ((end = buffer.indexOf('\n\n')) !== -1) {
+      const block = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      let name = 'message';
+      let data = '';
+      for (const line of block.split('\n')) {
+        if (line.startsWith('event: ')) name = line.slice(7);
+        else if (line.startsWith('data: ')) data += line.slice(6);
+      }
+      if (data) onEvent(name, JSON.parse(data));
+    }
+  }
+}
+
 // Every call names its widget, which is how the server knows whose settings
 // and whose helpdesk a conversation belongs to.
 function createChatApi({ apiBaseUrl = DEFAULT_API_BASE_URL, widgetKey }) {
@@ -30,6 +54,40 @@ function createChatApi({ apiBaseUrl = DEFAULT_API_BASE_URL, widgetKey }) {
       // { reply, ticket?, chips?, handoff? } - reply is null when the message
       // went to a person rather than the bot.
       return readJson(res);
+    },
+
+    // The same reply as sendMessage, with onStatus(stage) called as the bot
+    // moves through the slow parts ("searching", "writing", ...). Falls back
+    // to sendMessage against a server without the stream, or a browser or
+    // proxy that cannot read one.
+    async sendMessageStreamed(sessionId, message, onStatus) {
+      let res;
+      try {
+        res = await fetch(`${base}/chat/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Widget-Key': widgetKey },
+          body: JSON.stringify({ sessionId, message }),
+        });
+      } catch {
+        return this.sendMessage(sessionId, message);
+      }
+      if (res.status === 404 || !res.body) return this.sendMessage(sessionId, message);
+      if (!res.ok) return readJson(res);
+
+      let reply = null;
+      let failure = null;
+      await readEvents(res, (name, data) => {
+        if (name === 'status') onStatus?.(data.stage);
+        else if (name === 'reply') reply = data;
+        else if (name === 'error') failure = data;
+      });
+      if (failure) {
+        const err = new Error(failure.error || 'Something went wrong. Please try again.');
+        err.status = failure.status;
+        throw err;
+      }
+      if (!reply) throw new Error('Something went wrong. Please try again.');
+      return reply;
     },
 
     // { messages, ticket } - the conversation so far, to redraw after a reload.

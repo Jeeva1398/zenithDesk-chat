@@ -125,6 +125,8 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
   messagesRef.current = messages;
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  // What the bot is busy with while it works out a reply, e.g. 'searching'.
+  const [sendingStage, setSendingStage] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -239,7 +241,7 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
       setIsSending(true);
 
       try {
-        const reply = await api.sendMessage(targetSessionId, text);
+        const reply = await api.sendMessageStreamed(targetSessionId, text, setSendingStage);
         // null when the message went to a person, whose answer comes by poll.
         if (reply.reply !== null && reply.reply !== undefined) {
           appendMessage({
@@ -258,6 +260,7 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
         setError(err.message);
       } finally {
         setIsSending(false);
+        setSendingStage(null);
       }
     },
     [api, appendMessage, rememberConversation],
@@ -396,6 +399,7 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
     startNewConversation,
     isLoadingHistory,
     isSending,
+    sendingStage,
     isUploading,
     error,
   };

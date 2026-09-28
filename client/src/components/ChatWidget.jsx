@@ -125,6 +125,7 @@ function ChatWidgetPanel({ api, widgetKey, config }) {
                 widgetKey={widgetKey}
                 messages={messages}
                 isSending={isSending}
+                sendingStage={session.sendingStage}
                 error={error}
                 onSend={sendMessage}
                 onRate={session.rateMessage}

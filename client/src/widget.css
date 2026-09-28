@@ -829,6 +829,12 @@
   animation: zd-typing-bounce 1s infinite ease-in-out;
 }
 
+.zd-typing__label {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--zd-muted);
+}
+
 .zd-typing__dot:nth-child(2) {
   animation-delay: 0.15s;
 }

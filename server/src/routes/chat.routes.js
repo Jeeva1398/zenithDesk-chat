@@ -14,6 +14,8 @@ const router = express.Router();
 
 router.get('/config/:key', configLimiter, resolveWidget, chatController.getConfig);
 router.post('/chat', chatLimiter, resolveWidget, chatController.sendMessage);
+// The same, with progress along the way; the widget uses this one.
+router.post('/chat/stream', chatLimiter, resolveWidget, chatController.streamMessage);
 // Fetched once per page load, like the config, so it shares that limiter.
 router.get('/chat/history', configLimiter, resolveWidget, chatController.getHistory);
 // Polled every few seconds while a person has the conversation.

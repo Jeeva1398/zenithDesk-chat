@@ -9,6 +9,7 @@ function ChatWindow({
   widgetKey,
   messages,
   isSending,
+  sendingStage,
   error,
   onSend,
   onRate,
@@ -70,6 +71,7 @@ function ChatWindow({
         theme={theme}
         messages={messages}
         isSending={isSending || attachments?.isUploading}
+        sendingStage={isSending ? sendingStage : null}
         onChipSelect={onSend}
         onRate={onRate}
         ticket={ticket}
