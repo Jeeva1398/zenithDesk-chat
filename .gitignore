@@ -4,3 +4,5 @@ dist/
 *.log
 data/
 *.md
+# Browser-automation logs and snapshots
+.playwright-mcp/

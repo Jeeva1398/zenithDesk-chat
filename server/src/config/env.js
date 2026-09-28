@@ -21,6 +21,14 @@ function getCorsOrigins() {
   return configured.length > 0 ? configured : null; // null means "reflect any origin"
 }
 
+// A widget with no allowed sites is refused unless this is set - on a
+// developer's machine, say, where the dev sandbox runs on localhost. Never in
+// production: an empty list would let anyone who copies an org's snippet run
+// its bot, file tickets into its helpdesk and spend its model quota.
+function allowsAnySite() {
+  return process.env.ALLOW_ANY_SITE === 'true';
+}
+
 function validateEnv() {
   const errors = [];
 
@@ -36,9 +44,14 @@ function validateEnv() {
     throw new Error(`Invalid environment configuration:\n  - ${errors.join('\n  - ')}`);
   }
 
+  if (allowsAnySite()) {
+    const level = isProduction() ? 'warn' : 'info';
+    logger[level]('ALLOW_ANY_SITE is on - widgets with no allowed sites work on any site');
+  }
+
   if (getCorsOrigins() === null) {
     logger.info("CHAT_CORS_ORIGINS is not set - each widget's allowed sites decide who may embed it");
   }
 }
 
-module.exports = { validateEnv, isProduction, getCorsOrigins, parseList };
+module.exports = { validateEnv, isProduction, getCorsOrigins, parseList, allowsAnySite };
