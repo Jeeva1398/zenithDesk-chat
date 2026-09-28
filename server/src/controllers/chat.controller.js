@@ -6,6 +6,7 @@ const { toPublicConfig } = require('../services/widgetConfigService');
 const { buildExtras } = require('../services/replyExtras');
 const { startChips, botOf, CHIPS } = require('../services/botConfig');
 const handoffFlow = require('../services/handoffFlow');
+const analyticsReporter = require('../services/analyticsReporter');
 const { buildTranscript, toEntry } = require('../services/transcriptService');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/AppError');
@@ -33,9 +34,11 @@ const sendMessage = catchAsync(async (req, res) => {
   }
 
   const before = conversationStore.getConversationSummary(sessionId);
+  const isFirst = !conversationStore.hasUserMessages(sessionId);
   const reply = await chatService.sendMessage(sessionId, message, req.ip, req.widget);
   const after = conversationStore.getConversationSummary(sessionId);
   const handoff = handoffFlow.stateOf(after);
+  analyticsReporter.recordTurn(req.widget.publicKey, sessionId, before, after, message, { isFirst });
 
   // Sent on to a person: nothing from the bot, just where the chat stands.
   if (reply === null) {
@@ -137,6 +140,7 @@ const sendFeedback = catchAsync(async (req, res) => {
   if (!conversationStore.setMessageFeedback(sessionId, Number(match[1]), feedback)) {
     throw new AppError('Message not found', 404);
   }
+  analyticsReporter.recordRating(req.widget.publicKey, sessionId, messageId, feedback);
   res.status(204).end();
 });
 

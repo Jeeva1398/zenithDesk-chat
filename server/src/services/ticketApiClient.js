@@ -162,8 +162,26 @@ function closeLiveChat(widgetKey, clientIp, chatId, sessionId) {
   });
 }
 
+// What happened in conversations, for the main app's Chatbot analytics.
+async function reportChatbotEvents(widgetKey, events) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${TICKET_API_BASE_URL}/analytics/chatbot/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(widgetKey) },
+      signal: controller.signal,
+      body: JSON.stringify({ events }),
+    });
+    if (!res.ok) throw new TicketApiError(res.status, `Chatbot events report failed: ${res.status}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 module.exports = {
   createTicket,
+  reportChatbotEvents,
   createEnquiry,
   uploadAttachment,
   openLiveChat,

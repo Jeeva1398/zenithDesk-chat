@@ -46,6 +46,12 @@ function appendMessage(sessionId, role, content, meta = null) {
   return Number(result.lastInsertRowid);
 }
 
+// Whether the visitor has said anything yet - an attachment alone does not
+// count.
+function hasUserMessages(sessionId) {
+  return Boolean(db.prepare("SELECT 1 FROM messages WHERE session_id = ? AND role = 'user' LIMIT 1").get(sessionId));
+}
+
 // Replies stored after a given one: what a widget polling a live chat has not
 // drawn yet. The visitor's own messages are left out, since the widget shows
 // those as they are sent.
@@ -294,6 +300,7 @@ module.exports = {
   getTicketId,
   appendMessage,
   getRepliesAfter,
+  hasUserMessages,
   getHistory,
   getTranscript,
   TRANSCRIPT_LIMIT,
