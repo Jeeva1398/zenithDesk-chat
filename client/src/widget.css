@@ -1085,3 +1085,46 @@
     scroll-behavior: auto;
   }
 }
+
+/* Live chat with a person. */
+.zd-agent-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--zd-primary-soft);
+  color: var(--zd-primary);
+}
+
+.zd-message-event {
+  align-self: center;
+  margin: 4px auto;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--zd-muted);
+  background: var(--zd-primary-soft);
+}
+
+.zd-end-chat {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.zd-end-chat:hover {
+  opacity: 1;
+}

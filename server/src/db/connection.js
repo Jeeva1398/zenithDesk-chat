@@ -42,6 +42,10 @@ const NEW_CONVERSATION_COLUMNS = {
   enquiry_phone: 'TEXT',
   enquiry_company: 'TEXT',
   enquiry_id: 'TEXT',
+  handoff_state: 'TEXT',
+  live_chat_id: 'TEXT',
+  live_chat_last_id: 'INTEGER',
+  live_chat_agent: 'TEXT',
 };
 
 const existingColumns = new Set(db.prepare('PRAGMA table_info(conversations)').all().map((col) => col.name));

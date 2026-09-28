@@ -27,7 +27,8 @@ function createChatApi({ apiBaseUrl = DEFAULT_API_BASE_URL, widgetKey }) {
         headers: { 'Content-Type': 'application/json', 'X-Widget-Key': widgetKey },
         body: JSON.stringify({ sessionId, message }),
       });
-      // { reply, ticket?, chips? }
+      // { reply, ticket?, chips?, handoff? } - reply is null when the message
+      // went to a person rather than the bot.
       return readJson(res);
     },
 
@@ -37,6 +38,24 @@ function createChatApi({ apiBaseUrl = DEFAULT_API_BASE_URL, widgetKey }) {
         headers: { 'X-Widget-Key': widgetKey },
       });
       return readJson(res);
+    },
+
+    // { messages, handoff } - replies newer than `after` (a stored id such as
+    // "m42") while a person has the conversation, and where that chat stands.
+    async getUpdates(sessionId, after) {
+      const query = `sessionId=${encodeURIComponent(sessionId)}${after ? `&after=${encodeURIComponent(after)}` : ''}`;
+      const res = await fetch(`${base}/chat/updates?${query}`, { headers: { 'X-Widget-Key': widgetKey } });
+      return readJson(res);
+    },
+
+    // The visitor leaving a chat with a person.
+    async endHandoff(sessionId) {
+      const res = await fetch(`${base}/chat/handoff/end`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Widget-Key': widgetKey },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (!res.ok) await readJson(res);
     },
 
     // Thumbs up ('up'), down ('down') or taken back (null) on one reply.

@@ -60,10 +60,13 @@ function matchChoice(field, message) {
   return match ? match.value : null;
 }
 
-function chipsFor(after, { startChips }) {
+function chipsFor(after, { startChips, handoffChip }) {
   if (startChips) return startChips;
 
-  if (after.kb_state === 'awaiting_feedback') return KNOWLEDGE_FEEDBACK_CHIPS;
+  // An answer that did not help is where a visitor most often wants a person.
+  if (after.kb_state === 'awaiting_feedback') {
+    return handoffChip ? [...KNOWLEDGE_FEEDBACK_CHIPS, handoffChip] : KNOWLEDGE_FEEDBACK_CHIPS;
+  }
 
   if (after.lookup_state === 'verified_lookup') {
     return parseList(after.last_shown_ticket_ids)
@@ -81,7 +84,8 @@ function chipsFor(after, { startChips }) {
 
 // startChips is set when the reply was the greeting or a decline: the
 // conversation is back at its start, so the org's opening choices are offered.
-function buildExtras(before, after, { startChips = null } = {}) {
+// handoffChip, when the org hands chats to people, is offered after an answer.
+function buildExtras(before, after, { startChips = null, handoffChip = null } = {}) {
   const extras = {};
 
   if (before?.status !== 'confirmed' && after?.status === 'confirmed' && after.ticket_id) {
@@ -95,7 +99,7 @@ function buildExtras(before, after, { startChips = null } = {}) {
     if (sources.length > 0) extras.sources = sources;
   }
 
-  const chips = after ? chipsFor(after, { startChips }) : [];
+  const chips = after ? chipsFor(after, { startChips, handoffChip }) : [];
   if (chips.length > 0) extras.chips = chips;
 
   return extras;

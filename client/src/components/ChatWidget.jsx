@@ -131,6 +131,8 @@ function ChatWidgetPanel({ api, widgetKey, config }) {
                 attachments={attachments}
                 isLoading={session.isLoadingHistory}
                 ticket={session.ticket}
+                handoff={session.handoff}
+                onEndHandoff={session.endHandoff}
                 canStartOver={session.hasUserMessages}
                 onStartOver={session.startNewConversation}
                 onBack={() => setView('home')}

@@ -8,6 +8,7 @@ const { matchChoice, nextQuestionField } = require('./replyExtras');
 const knowledgeFlow = require('./knowledgeFlow');
 const enquiryFlow = require('./enquiryFlow');
 const botConfig = require('./botConfig');
+const handoffFlow = require('./handoffFlow');
 const { EMAIL_PATTERN } = require('../utils/emailPattern');
 const logger = require('../utils/logger');
 
@@ -181,14 +182,33 @@ function outOfScope(sessionId, widget, prefix = '') {
 // widget is the resolved widget the message came through: its key, which the
 // main app finds the org from, that org, for the OTP calls that take it, and
 // the bot settings that decide which of the flows below are open.
+//
+// Returns the bot's reply, or null when the message went to a person on the
+// team instead - their answer arrives later, through the widget's polling.
 async function sendMessage(sessionId, message, clientIp, widget) {
   startChipSessions.delete(sessionId);
   conversationStore.getOrCreateConversation(sessionId);
   conversationStore.bindWidget(sessionId, widget.publicKey);
   conversationStore.appendMessage(sessionId, 'user', message);
 
-  const { purposes, companyDescription } = botConfig.botOf(widget);
-  const existing = conversationStore.getConversationSummary(sessionId);
+  const { purposes, companyDescription, handoff } = botConfig.botOf(widget);
+  let existing = conversationStore.getConversationSummary(sessionId);
+
+  // While a person has the conversation, the bot stays out of it. A chat that
+  // has ended in the meantime hands the message back to the bot below.
+  if (existing.handoff_state) {
+    const relayed = await handoffFlow.forward(sessionId, message, existing, widget, clientIp);
+    if (relayed.sent) return null;
+    if (relayed.text) return reply(sessionId, relayed.text);
+    existing = conversationStore.getConversationSummary(sessionId);
+  }
+
+  // Asking for a person works from anywhere in a conversation. Whatever the
+  // bot was in the middle of is still there when the chat ends.
+  if (handoff.enabled && handoffFlow.wantsPerson(message)) {
+    const { text, offerStart } = await handoffFlow.start(sessionId, widget, clientIp);
+    return offerStart ? replyWithStartChips(sessionId, text) : reply(sessionId, text);
+  }
 
   if (existing.status === 'confirmed') {
     return reply(

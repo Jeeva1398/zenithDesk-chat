@@ -10,6 +10,23 @@ function parseMeta(value) {
   }
 }
 
+// One stored message as the widget draws it. agent is who wrote a reply
+// relayed from a live chat; event marks a note such as someone joining.
+function toEntry(m) {
+  const { ticket, chips, sources, agent, event } = parseMeta(m.meta);
+  return {
+    id: `m${m.id}`,
+    role: m.role,
+    content: m.content,
+    ...(ticket ? { ticket } : {}),
+    ...(chips ? { chips } : {}),
+    ...(sources ? { sources } : {}),
+    ...(agent ? { agent } : {}),
+    ...(event ? { event } : {}),
+    ...(m.feedback ? { feedback: m.feedback } : {}),
+  };
+}
+
 // The conversation as the widget draws it: messages with the ticket card and
 // chips they were sent with, and attachment bubbles interleaved where they
 // were sent. Same shapes the widget builds live, so a reload looks exactly
@@ -19,19 +36,7 @@ function buildTranscript(sessionId) {
   const truncated = messages.length === conversationStore.TRANSCRIPT_LIMIT;
   const since = truncated ? messages[0].created_at : null;
 
-  const entries = messages.map((m) => {
-    const { ticket, chips, sources } = parseMeta(m.meta);
-    return {
-      id: `m${m.id}`,
-      at: m.created_at,
-      role: m.role,
-      content: m.content,
-      ...(ticket ? { ticket } : {}),
-      ...(chips ? { chips } : {}),
-      ...(sources ? { sources } : {}),
-      ...(m.feedback ? { feedback: m.feedback } : {}),
-    };
-  });
+  const entries = messages.map((m) => ({ ...toEntry(m), at: m.created_at }));
 
   const attachments = attachmentService
     .listForSession(sessionId)
@@ -65,4 +70,4 @@ function buildTranscript(sessionId) {
   return merged;
 }
 
-module.exports = { buildTranscript };
+module.exports = { buildTranscript, toEntry };

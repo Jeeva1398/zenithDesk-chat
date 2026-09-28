@@ -4,8 +4,9 @@ const attachmentService = require('../services/attachmentService');
 const ticketApiClient = require('../services/ticketApiClient');
 const { toPublicConfig } = require('../services/widgetConfigService');
 const { buildExtras } = require('../services/replyExtras');
-const { startChips } = require('../services/botConfig');
-const { buildTranscript } = require('../services/transcriptService');
+const { startChips, botOf, CHIPS } = require('../services/botConfig');
+const handoffFlow = require('../services/handoffFlow');
+const { buildTranscript, toEntry } = require('../services/transcriptService');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/AppError');
 const logger = require('../utils/logger');
@@ -34,9 +35,17 @@ const sendMessage = catchAsync(async (req, res) => {
   const before = conversationStore.getConversationSummary(sessionId);
   const reply = await chatService.sendMessage(sessionId, message, req.ip, req.widget);
   const after = conversationStore.getConversationSummary(sessionId);
+  const handoff = handoffFlow.stateOf(after);
+
+  // Sent on to a person: nothing from the bot, just where the chat stands.
+  if (reply === null) {
+    res.json({ reply: null, handoff });
+    return;
+  }
 
   const extras = buildExtras(before, after, {
     startChips: chatService.offersStartChips(sessionId) ? startChips(req.widget) : null,
+    handoffChip: botOf(req.widget).handoff.enabled ? CHIPS.handoff : null,
   });
   // Stored with the reply, so a reloaded widget can redraw the ticket card and
   // the chips instead of just the text.
@@ -47,7 +56,44 @@ const sendMessage = catchAsync(async (req, res) => {
   // `reply` stays a plain string, so an older widget keeps working; the
   // extras are additive. messageId is what the widget rates the reply by.
   const latestId = conversationStore.getLatestAssistantMessageId(sessionId);
-  res.json({ reply, ...extras, ...(latestId ? { messageId: `m${latestId}` } : {}) });
+  res.json({ reply, ...extras, ...(latestId ? { messageId: `m${latestId}` } : {}), handoff });
+});
+
+function requireOwnConversation(sessionId, widget) {
+  const boundKey = conversationStore.getWidgetKey(sessionId);
+  if (boundKey && boundKey !== widget.publicKey) {
+    throw new AppError('This conversation belongs to a different chat widget', 403);
+  }
+  return boundKey;
+}
+
+// Polled by a widget whose conversation is with a person: the replies it has
+// not drawn yet (after is the id of the newest one it has), and where the chat
+// stands. When the chat ends, the bot's closing reply comes back the same way.
+const getUpdates = catchAsync(async (req, res) => {
+  const sessionId = requireSessionId(req.query.sessionId);
+  res.set('Cache-Control', 'no-store');
+  if (!requireOwnConversation(sessionId, req.widget)) {
+    res.json({ messages: [], handoff: null });
+    return;
+  }
+
+  const handoff = await handoffFlow.sync(sessionId, req.widget, req.ip);
+  const match = typeof req.query.after === 'string' ? req.query.after.match(/^m(\d+)$/) : null;
+  const messages = conversationStore.getRepliesAfter(sessionId, match ? Number(match[1]) : 0).map(toEntry);
+  // Chips belong to the latest reply only.
+  messages.forEach((entry, i) => {
+    if (i !== messages.length - 1) delete entry.chips;
+  });
+  res.json({ messages, handoff });
+});
+
+// The visitor leaving a chat with a person, from the widget's End chat button.
+const endHandoff = catchAsync(async (req, res) => {
+  const sessionId = requireSessionId(req.body.sessionId);
+  if (!requireOwnConversation(sessionId, req.widget)) throw new AppError('Conversation not found', 404);
+  await handoffFlow.end(sessionId, req.widget, req.ip);
+  res.status(204).end();
 });
 
 // The session id is the only thing proving a visitor owns a conversation -
@@ -67,6 +113,7 @@ const getHistory = catchAsync(async (req, res) => {
   res.json({
     messages: summary ? buildTranscript(sessionId) : [],
     ticket: summary?.status === 'confirmed' ? { id: summary.ticket_id, summary: summary.summary } : null,
+    handoff: handoffFlow.stateOf(summary),
   });
 });
 
@@ -142,4 +189,13 @@ const uploadAttachment = catchAsync(async (req, res) => {
   res.status(201).json(attachment);
 });
 
-module.exports = { getConfig, sendMessage, getHistory, sendFeedback, submitEnquiry, uploadAttachment };
+module.exports = {
+  getConfig,
+  sendMessage,
+  getHistory,
+  getUpdates,
+  endHandoff,
+  sendFeedback,
+  submitEnquiry,
+  uploadAttachment,
+};

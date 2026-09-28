@@ -48,4 +48,13 @@ const enquiryLimiter = rateLimit({
   handler: rejectWith('Too many messages sent - please wait a few minutes and try again.'),
 });
 
-module.exports = { chatLimiter, configLimiter, attachmentLimiter, enquiryLimiter };
+// A widget in a chat with a person polls every few seconds for as long as the
+// chat runs: about 300 a quarter hour, with room for a second tab.
+const pollLimiter = rateLimit({
+  ...common,
+  windowMs: 15 * 60 * 1000,
+  limit: 700,
+  handler: rejectWith('Too many requests - please try again shortly.'),
+});
+
+module.exports = { chatLimiter, configLimiter, attachmentLimiter, enquiryLimiter, pollLimiter };

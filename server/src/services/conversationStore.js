@@ -31,14 +31,31 @@ function getTicketId(sessionId) {
   return row?.ticket_id || null;
 }
 
-function appendMessage(sessionId, role, content) {
+// meta is what the widget draws the message with besides its text - for an
+// agent's reply relayed from a live chat, who wrote it.
+function appendMessage(sessionId, role, content, meta = null) {
   // Stamped to the millisecond rather than by the column default, which is to
   // the second: a reloaded transcript interleaves messages with attachments by
   // time, and a file sent a moment before a message must stay before it.
-  db.prepare(
-    `INSERT INTO messages (session_id, role, content, created_at)
-     VALUES (?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
-  ).run(sessionId, role, content);
+  const result = db
+    .prepare(
+      `INSERT INTO messages (session_id, role, content, meta, created_at)
+       VALUES (?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
+    )
+    .run(sessionId, role, content, meta ? JSON.stringify(meta) : null);
+  return Number(result.lastInsertRowid);
+}
+
+// Replies stored after a given one: what a widget polling a live chat has not
+// drawn yet. The visitor's own messages are left out, since the widget shows
+// those as they are sent.
+function getRepliesAfter(sessionId, afterId) {
+  return db
+    .prepare(
+      `SELECT id, role, content, meta, feedback, created_at FROM messages
+       WHERE session_id = ? AND role = 'assistant' AND id > ? ORDER BY id`,
+    )
+    .all(sessionId, afterId);
 }
 
 function getHistory(sessionId, limit = HISTORY_LIMIT) {
@@ -109,7 +126,8 @@ function getConversationSummary(sessionId) {
     .prepare(
       `SELECT status, ticket_id, category, priority, summary, description, needs_more_info, missing_fields, awaiting_contact,
               lookup_state, kb_state, kb_outcome, kb_sources, customer_email, customer_jwt, customer_jwt_expires_at, last_shown_ticket_ids,
-              flow, enquiry_state, enquiry_message, enquiry_name, enquiry_email, enquiry_phone, enquiry_company, enquiry_id
+              flow, enquiry_state, enquiry_message, enquiry_name, enquiry_email, enquiry_phone, enquiry_company, enquiry_id,
+              handoff_state, live_chat_id, live_chat_last_id, live_chat_agent
        FROM conversations WHERE session_id = ?`,
     )
     .get(sessionId);
@@ -235,6 +253,30 @@ function updateEnquiry(sessionId, fields) {
   ).run(...entries.map(([, value]) => (value === undefined ? null : value)), sessionId);
 }
 
+// Where the conversation stands with a person: 'waiting' for one to join,
+// 'active' once one has, or null when the bot has it. lastId is the newest
+// live chat message already relayed into this conversation, agentName who is
+// answering.
+function setHandoff(sessionId, { state, chatId, lastId, agentName }) {
+  const assignments = ['handoff_state = ?'];
+  const values = [state];
+  if (agentName !== undefined) {
+    assignments.push('live_chat_agent = ?');
+    values.push(agentName);
+  }
+  if (chatId !== undefined) {
+    assignments.push('live_chat_id = ?');
+    values.push(chatId === null ? null : String(chatId));
+  }
+  if (lastId !== undefined) {
+    assignments.push('live_chat_last_id = ?');
+    values.push(lastId);
+  }
+  db.prepare(
+    `UPDATE conversations SET ${assignments.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE session_id = ?`,
+  ).run(...values, sessionId);
+}
+
 // Ends the status-lookup flow entirely (expired session, too many failed OTP
 // attempts) so the next message re-enters via the intent router from scratch.
 function clearLookupState(sessionId) {
@@ -251,6 +293,7 @@ module.exports = {
   bindWidget,
   getTicketId,
   appendMessage,
+  getRepliesAfter,
   getHistory,
   getTranscript,
   TRANSCRIPT_LIMIT,
@@ -272,4 +315,5 @@ module.exports = {
   setKnowledgeState,
   setFlow,
   updateEnquiry,
+  setHandoff,
 };

@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS conversations (
   enquiry_phone TEXT,
   enquiry_company TEXT,
   enquiry_id TEXT,
+  handoff_state TEXT,
+  live_chat_id TEXT,
+  live_chat_last_id INTEGER,
+  live_chat_agent TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   confirmed_at DATETIME

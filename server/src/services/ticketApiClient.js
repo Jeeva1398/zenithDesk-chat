@@ -102,4 +102,73 @@ async function uploadAttachment(widgetKey, ticketId, { buffer, filename, mimeTyp
   }
 }
 
-module.exports = { createTicket, createEnquiry, uploadAttachment, TicketApiError };
+// Live chat calls are polled for as long as a chat runs, so they name the
+// visitor they are for: the main app rate limits by that, rather than putting
+// every visitor on this host's one address.
+const CLIENT_IP_HEADER = 'X-ZenithDesk-Client-IP';
+
+async function liveChatRequest(widgetKey, clientIp, path, { method = 'GET', body } = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${TICKET_API_BASE_URL}/live-chats${path}`, {
+      method,
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...authHeaders(widgetKey),
+        ...(clientIp ? { [CLIENT_IP_HEADER]: clientIp } : {}),
+      },
+      signal: controller.signal,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new TicketApiError(res.status, data.error || `Live chat request failed: ${res.status}`);
+    }
+    return data;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// 503 when nobody is signed in to answer, 409 when the org has handoff off.
+function openLiveChat(widgetKey, clientIp, { sessionId, transcript, visitorName, visitorEmail }) {
+  return liveChatRequest(widgetKey, clientIp, '', {
+    method: 'POST',
+    body: { sessionId, transcript, visitorName, visitorEmail },
+  });
+}
+
+// 409 once the chat has ended.
+function sendLiveChatMessage(widgetKey, clientIp, chatId, sessionId, body) {
+  return liveChatRequest(widgetKey, clientIp, `/${encodeURIComponent(chatId)}/messages`, {
+    method: 'POST',
+    body: { sessionId, body },
+  });
+}
+
+// { chat: { status, agent }, messages: [{ id, authorType, authorName, body }] }
+function getLiveChatMessages(widgetKey, clientIp, chatId, sessionId, after) {
+  const query = `sessionId=${encodeURIComponent(sessionId)}&after=${Number(after) || 0}`;
+  return liveChatRequest(widgetKey, clientIp, `/${encodeURIComponent(chatId)}/messages?${query}`);
+}
+
+function closeLiveChat(widgetKey, clientIp, chatId, sessionId) {
+  return liveChatRequest(widgetKey, clientIp, `/${encodeURIComponent(chatId)}/close`, {
+    method: 'POST',
+    body: { sessionId },
+  });
+}
+
+module.exports = {
+  createTicket,
+  createEnquiry,
+  uploadAttachment,
+  openLiveChat,
+  sendLiveChatMessage,
+  getLiveChatMessages,
+  closeLiveChat,
+  TicketApiError,
+};

@@ -49,11 +49,48 @@ function MessageActions({ message, onRate }) {
   );
 }
 
+function agentInitial(name) {
+  return (name || '?').trim().charAt(0).toUpperCase() || '?';
+}
+
 function MessageBubble({ theme, message, startsGroup, onRate }) {
+  // A note in the chat itself: someone joining or ending it.
+  if (message.event) {
+    return (
+      <div className="zd-message-event" role="status">
+        {message.content}
+      </div>
+    );
+  }
+
   if (message.role === 'user') {
     return (
       <div className="zd-message zd-message--user">
         <div className="zd-message__bubble">{message.content}</div>
+      </div>
+    );
+  }
+
+  // A reply from a person on the team, relayed from the live chat. It is
+  // theirs rather than the bot's, so it carries their name and cannot be rated.
+  if (message.agent) {
+    return (
+      <div className={`zd-message zd-message--assistant${startsGroup ? ' zd-message--group-start' : ''}`}>
+        {startsGroup && (
+          <p className="zd-message__label">
+            {message.agent} · {theme.title}
+          </p>
+        )}
+        <div className="zd-message__row">
+          <span className="zd-message__avatar">
+            {startsGroup && <span className="zd-agent-avatar">{agentInitial(message.agent)}</span>}
+          </span>
+          <div className="zd-message__content">
+            <div className="zd-message__bubble">
+              <FormattedText text={message.content} />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

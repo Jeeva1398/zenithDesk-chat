@@ -4,6 +4,8 @@ const SESSION_STORAGE_KEY = 'zenithdesk-chatbot-session-id';
 const CONVERSATIONS_KEY = 'zenithdesk-chatbot-conversations';
 const MAX_CONVERSATIONS = 20;
 const PREVIEW_CHARS = 90;
+// How often the widget looks for a person's replies while one has the chat.
+const HANDOFF_POLL_MS = 3000;
 
 // Offered under the widget's own greeting, which is shown locally before the
 // server has been asked anything. The server sends them with the config, since
@@ -91,6 +93,20 @@ function withServerIds(messages) {
   );
 }
 
+function storedNumber(serverId) {
+  return typeof serverId === 'string' && /^m\d+$/.test(serverId) ? Number(serverId.slice(1)) : 0;
+}
+
+// The newest stored reply the widget has drawn, which is where a poll for a
+// person's replies picks up from.
+function latestServerId(messages) {
+  let latest = null;
+  for (const m of messages) {
+    if (m.serverId && storedNumber(m.serverId) > storedNumber(latest)) latest = m.serverId;
+  }
+  return latest;
+}
+
 function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_CHIPS }) {
   const chipsRef = useRef(startChips);
   chipsRef.current = startChips;
@@ -102,6 +118,11 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
   const [messages, setMessages] = useState(() => greetingMessages(greeting, chipsRef.current));
   const [conversations, setConversations] = useState(() => readConversations(widgetKey));
   const [ticket, setTicket] = useState(null);
+  // { state: 'waiting' | 'active', agentName } while a person has the chat.
+  const [handoff, setHandoff] = useState(null);
+  const inHandoff = Boolean(handoff);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -128,6 +149,7 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
           ...withServerIds(history.messages),
         ]);
         setTicket(history.ticket);
+        setHandoff(history.handoff || null);
         // A conversation from before the list existed joins it, without
         // jumping to the top as if it had just been used.
         const last = [...history.messages].reverse().find((m) => m.content);
@@ -158,6 +180,43 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
     setMessages((prev) => [...prev, { id: nextMessageId.current, ...message }]);
   }, []);
 
+  // While a person has the conversation, their replies are fetched every few
+  // seconds (keyed on whether there is a chat, not on its details, which every
+  // poll refreshes); the bot's own reply when the chat ends arrives the same way, and
+  // stops the polling.
+  useEffect(() => {
+    if (!inHandoff || isLoadingHistory) return undefined;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const update = await api.getUpdates(sessionId, latestServerId(messagesRef.current));
+        if (cancelled) return;
+        if (update.messages.length > 0) {
+          setMessages((prev) => {
+            const known = new Set(prev.map((m) => m.serverId).filter(Boolean));
+            const fresh = withServerIds(update.messages).filter((m) => !known.has(m.serverId));
+            // Chips are only for the latest reply.
+            const cleared = fresh.length > 0 ? prev.map((m) => (m.chips ? { ...m, chips: undefined } : m)) : prev;
+            return [...cleared, ...fresh];
+          });
+          const last = update.messages[update.messages.length - 1];
+          rememberConversationRef.current?.(sessionId, last.content);
+        }
+        setHandoff(update.handoff || null);
+      } catch {
+        // A missed poll is retried on the next tick.
+      }
+    };
+
+    const timer = setInterval(poll, HANDOFF_POLL_MS);
+    poll();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [api, sessionId, inHandoff, isLoadingHistory]);
+
   const rememberConversation = useCallback(
     (id, preview) => {
       setConversations((prev) => {
@@ -169,6 +228,8 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
     },
     [widgetKey],
   );
+  const rememberConversationRef = useRef(rememberConversation);
+  rememberConversationRef.current = rememberConversation;
 
   const sendTo = useCallback(
     async (targetSessionId, text) => {
@@ -179,15 +240,19 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
 
       try {
         const reply = await api.sendMessage(targetSessionId, text);
-        appendMessage({
-          role: 'assistant',
-          content: reply.reply,
-          ticket: reply.ticket,
-          chips: reply.chips,
-          sources: reply.sources,
-          serverId: reply.messageId,
-        });
-        rememberConversation(targetSessionId, reply.reply);
+        // null when the message went to a person, whose answer comes by poll.
+        if (reply.reply !== null && reply.reply !== undefined) {
+          appendMessage({
+            role: 'assistant',
+            content: reply.reply,
+            ticket: reply.ticket,
+            chips: reply.chips,
+            sources: reply.sources,
+            serverId: reply.messageId,
+          });
+          rememberConversation(targetSessionId, reply.reply);
+        }
+        setHandoff(reply.handoff || null);
         if (reply.ticket) setTicket(reply.ticket);
       } catch (err) {
         setError(err.message);
@@ -213,6 +278,7 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
       writeStorage(storageKeyFor(widgetKey), id);
       setError(null);
       setTicket(null);
+      setHandoff(null);
       setMessages(greetingMessages(greeting, fresh ? chipsRef.current : null));
       setSessionId(id);
     },
@@ -296,6 +362,22 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
     [api, sessionId, isUploading, appendMessage, rememberConversation],
   );
 
+  // Leaving a chat with a person. The bot's reply to it arrives by poll.
+  const endHandoff = useCallback(async () => {
+    setError(null);
+    try {
+      await api.endHandoff(sessionId);
+      const update = await api.getUpdates(sessionId, latestServerId(messagesRef.current));
+      setMessages((prev) => {
+        const known = new Set(prev.map((m) => m.serverId).filter(Boolean));
+        return [...prev, ...withServerIds(update.messages).filter((m) => !known.has(m.serverId))];
+      });
+      setHandoff(update.handoff || null);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [api, sessionId]);
+
   const hasUserMessages = messages.some((m) => m.role === 'user');
 
   return {
@@ -303,6 +385,8 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
     messages,
     conversations,
     ticket,
+    handoff,
+    endHandoff,
     hasUserMessages,
     sendMessage,
     startConversationWith,

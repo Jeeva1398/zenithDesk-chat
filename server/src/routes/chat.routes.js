@@ -2,7 +2,13 @@ const express = require('express');
 const chatController = require('../controllers/chat.controller');
 const resolveWidget = require('../middleware/resolveWidget');
 const singleUpload = require('../middleware/singleUpload');
-const { chatLimiter, configLimiter, attachmentLimiter, enquiryLimiter } = require('../middleware/rateLimiters');
+const {
+  chatLimiter,
+  configLimiter,
+  attachmentLimiter,
+  enquiryLimiter,
+  pollLimiter,
+} = require('../middleware/rateLimiters');
 
 const router = express.Router();
 
@@ -10,6 +16,9 @@ router.get('/config/:key', configLimiter, resolveWidget, chatController.getConfi
 router.post('/chat', chatLimiter, resolveWidget, chatController.sendMessage);
 // Fetched once per page load, like the config, so it shares that limiter.
 router.get('/chat/history', configLimiter, resolveWidget, chatController.getHistory);
+// Polled every few seconds while a person has the conversation.
+router.get('/chat/updates', pollLimiter, resolveWidget, chatController.getUpdates);
+router.post('/chat/handoff/end', chatLimiter, resolveWidget, chatController.endHandoff);
 router.post('/chat/feedback', chatLimiter, resolveWidget, chatController.sendFeedback);
 // The widget is resolved before the body is read, so a request for an unknown
 // widget or a disallowed site is turned away without buffering its file.

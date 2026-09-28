@@ -5,6 +5,8 @@
 // and ticket status, no enquiries.
 
 const DEFAULT_PURPOSES = { enquiry: false, support: true, knowledge: true, status: true };
+// Handing the chat to a person is off unless the org turned it on.
+const DEFAULT_HANDOFF = { enabled: false, waitMinutes: 3 };
 
 function botOf(widget) {
   const bot = widget?.bot || {};
@@ -12,6 +14,7 @@ function botOf(widget) {
     purposes: { ...DEFAULT_PURPOSES, ...(bot.purposes || {}) },
     companyDescription: bot.companyDescription || '',
     outOfScopeMessage: bot.outOfScopeMessage || '',
+    handoff: { ...DEFAULT_HANDOFF, ...(bot.handoff || {}) },
   };
 }
 
@@ -22,6 +25,7 @@ const CHIPS = {
   support: 'Report a problem',
   question: 'Ask a question',
   status: 'Check my ticket status',
+  handoff: 'Talk to a person',
 };
 
 const START_CHIP_INTENTS = {
@@ -40,6 +44,7 @@ function startChips(widget) {
   // or tickets on, a typed question already reaches the knowledge base first.
   if (purposes.knowledge && !purposes.enquiry && !purposes.support) chips.push(CHIPS.question);
   if (purposes.status) chips.push(CHIPS.status);
+  if (botOf(widget).handoff.enabled) chips.push(CHIPS.handoff);
   return chips;
 }
 

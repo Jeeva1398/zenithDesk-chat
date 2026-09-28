@@ -5,7 +5,7 @@ import TypingIndicator from './TypingIndicator';
 import AttachmentBubble from './AttachmentBubble';
 import QuickReplies from './QuickReplies';
 
-function MessageList({ theme, messages, isSending, onChipSelect, onRate, ticket, onStartOver }) {
+function MessageList({ theme, messages, isSending, onChipSelect, onRate, ticket, onStartOver, handoff }) {
   const bottomRef = useRef(null);
   const lastMessage = messages[messages.length - 1];
 
@@ -24,10 +24,16 @@ function MessageList({ theme, messages, isSending, onChipSelect, onRate, ticket,
         if (message.ticket) {
           return <TicketConfirmation key={message.id} ticketId={message.ticket.id} summary={message.ticket.summary} />;
         }
-        // The name label and avatar mark the start of each run of bot
-        // replies, not every bubble in it.
+        // The name label and avatar mark the start of each run of replies from
+        // one sender - the bot, or a person - not every bubble in it.
         const previous = messages[index - 1];
-        const startsGroup = message.role === 'assistant' && (!previous || previous.role !== 'assistant' || previous.ticket);
+        const startsGroup =
+          message.role === 'assistant' &&
+          (!previous ||
+            previous.role !== 'assistant' ||
+            previous.ticket ||
+            previous.event ||
+            (previous.agent || null) !== (message.agent || null));
         return (
           <MessageBubble
             key={message.id}
@@ -51,7 +57,12 @@ function MessageList({ theme, messages, isSending, onChipSelect, onRate, ticket,
           </button>
         </div>
       )}
-      {isSending && <TypingIndicator theme={theme} />}
+      {isSending && !handoff && <TypingIndicator theme={theme} />}
+      {handoff?.state === 'waiting' && !isSending && (
+        <div className="zd-message-event" role="status">
+          Waiting for someone from the team to join…
+        </div>
+      )}
       <div ref={bottomRef} />
     </div>
   );

@@ -15,6 +15,8 @@ function ChatWindow({
   attachments,
   isLoading,
   ticket,
+  handoff,
+  onEndHandoff,
   canStartOver,
   onStartOver,
   onBack,
@@ -30,12 +32,24 @@ function ChatWindow({
         <div className="zd-panel-header__identity">
           <span className="zd-panel-header__title">
             <span className="zd-panel-header__name">{theme.title}</span>
-            <span className="zd-badge">AI</span>
+            {/* The AI badge is for the bot; with a person it would mislead. */}
+            {handoff ? <span className="zd-badge">Live</span> : <span className="zd-badge">AI</span>}
           </span>
-          <span className="zd-panel-header__status">Online</span>
+          <span className="zd-panel-header__status">
+            {handoff?.state === 'active'
+              ? `Chatting with ${handoff.agentName || 'the team'}`
+              : handoff
+                ? 'Waiting for the team'
+                : 'Online'}
+          </span>
         </div>
         <div className="zd-panel-header__actions">
-          {canStartOver && (
+          {handoff && (
+            <button type="button" className="zd-end-chat" onClick={onEndHandoff}>
+              End chat
+            </button>
+          )}
+          {canStartOver && !handoff && (
             <button
               type="button"
               className="zd-icon-button"
@@ -60,6 +74,7 @@ function ChatWindow({
         onRate={onRate}
         ticket={ticket}
         onStartOver={onStartOver}
+        handoff={handoff}
       />
 
       {error && (
