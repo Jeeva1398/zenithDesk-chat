@@ -4,6 +4,7 @@ import HomeView from './HomeView';
 import ConversationsView from './ConversationsView';
 import PoweredBy from './PoweredBy';
 import { ChatBubbles, ChevronDown, Home } from './Icons';
+import { avatarFor } from './avatars';
 import useChatSession, { plainPreview } from '../hooks/useChatSession';
 import { createChatApi } from '../api/chatApi';
 
@@ -84,6 +85,8 @@ function ChatWidgetPanel({ api, widgetKey, config }) {
     ? { accept: acceptFor(tools.attachments.types), onUpload: uploadFile, isUploading }
     : null;
   const showLogoLauncher = theme.launcherIcon === 'logo' && theme.logoUrl;
+  const launcherAvatar = theme.launcherIcon === 'avatar' ? avatarFor(theme.avatar) : null;
+  const launcherCharacter = launcherAvatar?.kind === 'character';
 
   // The org's Explore topics, or the bot's own opening choices without them.
   const topics = theme.topics?.length
@@ -186,13 +189,21 @@ function ChatWidgetPanel({ api, widgetKey, config }) {
 
       <button
         type="button"
-        className="zd-launcher"
+        // A character stands on its own; the round button comes back while the
+        // panel is open, to close it.
+        className={`zd-launcher${launcherCharacter && !isOpen ? ' zd-launcher--character' : ''}`}
         onClick={() => setIsOpen(!isOpen)}
         aria-label={isOpen ? 'Minimise chat' : `Open chat: ${theme.title}`}
         aria-expanded={isOpen}
       >
         {isOpen ? (
           <ChevronDown className="zd-launcher__icon" />
+        ) : launcherCharacter ? (
+          <launcherAvatar.Svg base={theme.primaryColor} animated />
+        ) : launcherAvatar ? (
+          <span className="zd-launcher__logo zd-launcher__avatar">
+            <launcherAvatar.Svg bg="var(--zd-primary)" fg="var(--zd-on-primary)" />
+          </span>
         ) : showLogoLauncher ? (
           <img src={theme.logoUrl} alt="" className="zd-launcher__logo" />
         ) : (
