@@ -59,8 +59,10 @@ function createChatApi({ apiBaseUrl = DEFAULT_API_BASE_URL, widgetKey }) {
     // The same reply as sendMessage, with onStatus(stage) called as the bot
     // moves through the slow parts ("searching", "writing", ...). Falls back
     // to sendMessage against a server without the stream, or a browser or
-    // proxy that cannot read one.
-    async sendMessageStreamed(sessionId, message, onStatus) {
+    // proxy that cannot read one. onText(text) gets an answer's text so far
+    // while it is written ('' when it starts over); the reply returned is the
+    // final word on it.
+    async sendMessageStreamed(sessionId, message, onStatus, onText) {
       let res;
       try {
         res = await fetch(`${base}/chat/stream`, {
@@ -76,8 +78,13 @@ function createChatApi({ apiBaseUrl = DEFAULT_API_BASE_URL, widgetKey }) {
 
       let reply = null;
       let failure = null;
+      let written = '';
       await readEvents(res, (name, data) => {
         if (name === 'status') onStatus?.(data.stage);
+        else if (name === 'text') {
+          written = data.reset ? '' : written + data.text;
+          onText?.(written);
+        }
         else if (name === 'reply') reply = data;
         else if (name === 'error') failure = data;
       });

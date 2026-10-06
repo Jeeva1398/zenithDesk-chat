@@ -13,7 +13,7 @@ function parseMeta(value) {
 // One stored message as the widget draws it. agent is who wrote a reply
 // relayed from a live chat; event marks a note such as someone joining.
 function toEntry(m) {
-  const { ticket, chips, sources, agent, event } = parseMeta(m.meta);
+  const { ticket, chips, sources, followUps, agent, event } = parseMeta(m.meta);
   return {
     id: `m${m.id}`,
     role: m.role,
@@ -21,6 +21,7 @@ function toEntry(m) {
     ...(ticket ? { ticket } : {}),
     ...(chips ? { chips } : {}),
     ...(sources ? { sources } : {}),
+    ...(followUps ? { followUps } : {}),
     ...(agent ? { agent } : {}),
     ...(event ? { event } : {}),
     ...(m.feedback ? { feedback: m.feedback } : {}),
@@ -62,9 +63,13 @@ function buildTranscript(sessionId) {
       return rest;
     });
 
-  // Chips belong to the latest reply only; older ones were already answered.
+  // Chips and suggested questions belong to the latest reply only; older ones
+  // were already answered.
   merged.forEach((entry, i) => {
-    if (i !== merged.length - 1) delete entry.chips;
+    if (i !== merged.length - 1) {
+      delete entry.chips;
+      delete entry.followUps;
+    }
   });
 
   return merged;

@@ -31,12 +31,16 @@ let primaryCoolingUntil = 0;
 
 async function callFallback(args, reason) {
   logger.warn(`LLM ${PRIMARY} unavailable (${reason}) - answering with ${FALLBACK}`);
+  // Whatever the first model streamed before failing is not this one's.
+  args.onRestart?.();
   return PROVIDERS[FALLBACK].chat(args);
 }
 
 // Same shape as ollamaClient.chat, so callers are unchanged. When both
 // providers fail the error propagates, and the callers' own fallbacks (the
-// keyword intent match, the rule-based classifier) take over as before.
+// keyword intent match, the rule-based classifier) take over as before. A
+// streaming caller passes onToken, and onRestart for when the fallback starts
+// over.
 async function chat(args) {
   // A knowledge-base answer is the one the visitor reads word for word.
   progress(args.tier === 'answer' ? 'writing' : 'thinking');

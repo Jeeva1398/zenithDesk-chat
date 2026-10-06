@@ -233,14 +233,21 @@ async function sendMessage(sessionId, message, clientIp, widget) {
   }
 
   // After a knowledge-base answer the customer either says it helped or it
-  // did not. Anything but a yes - "I still need help", or more detail - goes
-  // on to whichever flow the conversation started in, question included.
+  // did not, or asks one of the questions suggested with it - which gets an
+  // answer of its own. Anything else - "I still need help", more detail, or a
+  // suggested question the articles could not answer after all - goes on to
+  // whichever flow the conversation started in, question included.
   let escalatedFromKnowledge = false;
   if (existing.kb_state === 'awaiting_feedback') {
     if (knowledgeFlow.isSolved(message)) {
       return knowledgeFlow.markSolved(sessionId);
     }
-    conversationStore.setKnowledgeState(sessionId, { state: 'done', outcome: 'escalated' });
+    if (knowledgeFlow.isFollowUp(existing, message)) {
+      const answer = await knowledgeFlow.tryAnswer(sessionId, message, widget.publicKey, { companyDescription });
+      if (answer) return answer;
+    } else {
+      conversationStore.setKnowledgeState(sessionId, { state: 'done', outcome: 'escalated' });
+    }
     const target = escalationTarget(existing.flow, purposes);
     if (target === 'enquiry') {
       conversationStore.setFlow(sessionId, 'enquiry');

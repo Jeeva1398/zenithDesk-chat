@@ -70,8 +70,11 @@ const sendMessage = catchAsync(async (req, res) => {
 // The same answer, sent as server-sent events: a "status" event each time the
 // bot moves on to something slow (searching the help articles, writing an
 // answer, raising a ticket), then one "reply" event with what /chat returns.
-// The reply is only sent once it is final - a knowledge-base answer has passed
-// its evidence check - so nothing shown is ever taken back.
+// A knowledge-base answer also arrives as it is written, in "text" events -
+// but only once its evidence has been found in the articles, so what is shown
+// is not taken back. { reset: true } clears the text so far: the model failed
+// part way and another is starting over. The "reply" event is the final word
+// either way.
 const streamMessage = catchAsync(async (req, res) => {
   const input = readMessage(req.body);
 
@@ -85,7 +88,11 @@ const streamMessage = catchAsync(async (req, res) => {
   const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
   try {
-    const payload = await withProgress((stage) => send('status', { stage }), () => answer(req, input));
+    const payload = await withProgress(
+      (stage) => send('status', { stage }),
+      () => answer(req, input),
+      (text) => send('text', text === null ? { reset: true } : { text }),
+    );
     send('reply', payload);
   } catch (err) {
     // Too late for an HTTP status, so the error travels as an event.

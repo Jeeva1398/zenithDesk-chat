@@ -10,6 +10,7 @@ function ChatWindow({
   messages,
   isSending,
   sendingStage,
+  streamingText,
   error,
   onSend,
   onRate,
@@ -72,6 +73,7 @@ function ChatWindow({
         messages={messages}
         isSending={isSending || attachments?.isUploading}
         sendingStage={isSending ? sendingStage : null}
+        streamingText={isSending ? streamingText : null}
         onChipSelect={onSend}
         onRate={onRate}
         ticket={ticket}

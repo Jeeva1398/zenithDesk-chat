@@ -49,6 +49,29 @@ function MessageActions({ message, onRate }) {
   );
 }
 
+// Where a knowledge-base answer came from: each article, opening to the words
+// the answer rests on. Conversations stored before excerpts existed have
+// titles alone.
+function Sources({ sources }) {
+  const list = sources.map((s) => (typeof s === 'string' ? { title: s } : s));
+  return (
+    <div className="zd-message__sources">
+      {list.map((source) =>
+        source.excerpt ? (
+          <details key={source.title} className="zd-source">
+            <summary>From: {source.title}</summary>
+            <blockquote className="zd-source__quote">{source.excerpt}</blockquote>
+          </details>
+        ) : (
+          <p key={source.title} className="zd-source">
+            From: {source.title}
+          </p>
+        ),
+      )}
+    </div>
+  );
+}
+
 function agentInitial(name) {
   return (name || '?').trim().charAt(0).toUpperCase() || '?';
 }
@@ -103,9 +126,7 @@ function MessageBubble({ theme, message, startsGroup, onRate }) {
         <div className="zd-message__content">
           <div className="zd-message__bubble">
             <FormattedText text={message.content} />
-            {message.sources?.length > 0 && (
-              <div className="zd-message__sources">From: {message.sources.join(', ')}</div>
-            )}
+            {message.sources?.length > 0 && <Sources sources={message.sources} />}
           </div>
           {/* Replies the server stored can be rated; the local greeting cannot. */}
           {message.serverId && <MessageActions message={message} onRate={onRate} />}

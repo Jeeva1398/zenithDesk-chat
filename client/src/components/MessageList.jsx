@@ -5,13 +5,24 @@ import TypingIndicator from './TypingIndicator';
 import AttachmentBubble from './AttachmentBubble';
 import QuickReplies from './QuickReplies';
 
-function MessageList({ theme, messages, isSending, sendingStage, onChipSelect, onRate, ticket, onStartOver, handoff }) {
+function MessageList({
+  theme,
+  messages,
+  isSending,
+  sendingStage,
+  streamingText,
+  onChipSelect,
+  onRate,
+  ticket,
+  onStartOver,
+  handoff,
+}) {
   const bottomRef = useRef(null);
   const lastMessage = messages[messages.length - 1];
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages, isSending]);
+    bottomRef.current?.scrollIntoView({ behavior: streamingText ? 'auto' : 'smooth', block: 'end' });
+  }, [messages, isSending, streamingText]);
 
   return (
     <div className="zd-message-list" aria-live="polite">
@@ -46,6 +57,14 @@ function MessageList({ theme, messages, isSending, sendingStage, onChipSelect, o
       })}
       {/* Only the latest reply's chips: an older question has already been
           answered, and tapping its options would answer it again. */}
+      {!isSending && lastMessage?.followUps?.length > 0 && (
+        <QuickReplies
+          chips={lastMessage.followUps}
+          onSelect={onChipSelect}
+          label="You might also ask"
+          variant="questions"
+        />
+      )}
       {!isSending && lastMessage?.chips?.length > 0 && <QuickReplies chips={lastMessage.chips} onSelect={onChipSelect} />}
       {/* Once the ticket exists the conversation is done; offer a clean start
           rather than leaving the customer to type into "you already have an
@@ -57,7 +76,16 @@ function MessageList({ theme, messages, isSending, sendingStage, onChipSelect, o
           </button>
         </div>
       )}
-      {isSending && !handoff && <TypingIndicator theme={theme} stage={sendingStage} />}
+      {/* An answer being written shows as it arrives, in place of the dots. */}
+      {isSending && streamingText && (
+        <MessageBubble
+          theme={theme}
+          message={{ id: 'streaming', role: 'assistant', content: streamingText }}
+          startsGroup={lastMessage?.role !== 'assistant'}
+          onRate={onRate}
+        />
+      )}
+      {isSending && !handoff && !streamingText && <TypingIndicator theme={theme} stage={sendingStage} />}
       {handoff?.state === 'waiting' && !isSending && (
         <div className="zd-message-event" role="status">
           Waiting for someone from the team to join…

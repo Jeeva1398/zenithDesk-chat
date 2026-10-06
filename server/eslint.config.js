@@ -15,6 +15,7 @@ module.exports = [
         console: 'readonly',
         __dirname: 'readonly',
         fetch: 'readonly',
+        TextDecoder: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         AbortController: 'readonly',
