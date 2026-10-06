@@ -44,17 +44,21 @@ function parseRetryAfter(res) {
 
 // Takes the same arguments as ollamaClient.chat, so the callers do not care
 // which one answers. Ollama's option names are translated here; `tier` picks
-// the model, and Ollama, having one, ignores it.
-async function chat({ messages, format, options = {}, tier = 'default' }) {
+// the model, and Ollama, having one, ignores it. With onToken the reply is
+// streamed, and onToken gets the whole text so far after each piece.
+async function chat({ messages, format, options = {}, tier = 'default', onToken }) {
   if (!isConfigured()) {
     throw new GroqError('GROQ_API_KEY is not set');
   }
 
   const { model, reasoningEffort } = TIERS[tier] || TIERS.default;
-  const body = { model, messages, stream: false };
+  const body = { model, messages, stream: Boolean(onToken) };
   if (options.temperature !== undefined) body.temperature = options.temperature;
   if (options.num_predict !== undefined) body.max_completion_tokens = options.num_predict;
-  if (format === 'json') body.response_format = { type: 'json_object' };
+  // Groq holds a JSON-mode reply back and sends it in one piece, which would
+  // make streaming pointless; a streamed call relies on the prompt asking for
+  // JSON instead, and its caller on reading the object out of the text.
+  if (format === 'json' && !onToken) body.response_format = { type: 'json_object' };
   if (reasoningEffort && model.startsWith('openai/gpt-oss')) {
     body.reasoning_effort = reasoningEffort;
   }
@@ -78,6 +82,7 @@ async function chat({ messages, format, options = {}, tier = 'default' }) {
       });
     }
 
+    if (onToken) return await readStream(res, onToken);
     const data = await res.json();
     return data.choices?.[0]?.message?.content ?? '';
   } catch (err) {
@@ -88,6 +93,28 @@ async function chat({ messages, format, options = {}, tier = 'default' }) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// OpenAI-style server-sent events: one "data: {...}" line per piece, then
+// "data: [DONE]". gpt-oss streams its reasoning separately, which is skipped.
+async function readStream(res, onToken) {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let text = '';
+  for await (const chunk of res.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+      const piece = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content;
+      if (piece) {
+        text += piece;
+        onToken(text);
+      }
+    }
+  }
+  return text;
 }
 
 // Checks the key works and that the configured model still exists - Groq

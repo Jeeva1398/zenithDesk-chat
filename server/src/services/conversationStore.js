@@ -131,7 +131,7 @@ function getConversationSummary(sessionId) {
   return db
     .prepare(
       `SELECT status, ticket_id, category, priority, summary, description, needs_more_info, missing_fields, awaiting_contact,
-              lookup_state, kb_state, kb_outcome, kb_sources, customer_email, customer_jwt, customer_jwt_expires_at, last_shown_ticket_ids,
+              lookup_state, kb_state, kb_outcome, kb_sources, kb_follow_ups, kb_answers, customer_email, customer_jwt, customer_jwt_expires_at, last_shown_ticket_ids,
               flow, enquiry_state, enquiry_message, enquiry_name, enquiry_email, enquiry_phone, enquiry_company, enquiry_id,
               handoff_state, live_chat_id, live_chat_last_id, live_chat_agent
        FROM conversations WHERE session_id = ?`,
@@ -220,13 +220,23 @@ function setLastShownTicketIds(sessionId, ticketIds) {
 // Where the conversation stands with the knowledge base: awaiting_feedback
 // after an answer, done once the customer has said whether it helped (or
 // there was nothing to answer from). outcome says which, for reporting later.
-function setKnowledgeState(sessionId, { state, outcome = null, sources = null }) {
+// kb_answers counts the answers given, so a follow-up answered straight after
+// another answer still reads as a new one.
+function setKnowledgeState(sessionId, { state, outcome = null, sources = null, followUps = null, answered = false }) {
   db.prepare(
     `UPDATE conversations
      SET kb_state = ?, kb_outcome = COALESCE(?, kb_outcome), kb_sources = COALESCE(?, kb_sources),
+         kb_follow_ups = COALESCE(?, kb_follow_ups), kb_answers = COALESCE(kb_answers, 0) + ?,
          updated_at = CURRENT_TIMESTAMP
      WHERE session_id = ?`,
-  ).run(state, outcome, sources ? JSON.stringify(sources) : null, sessionId);
+  ).run(
+    state,
+    outcome,
+    sources ? JSON.stringify(sources) : null,
+    followUps ? JSON.stringify(followUps) : null,
+    answered ? 1 : 0,
+    sessionId,
+  );
 }
 
 // Which job the conversation is doing, decided on its first real message:

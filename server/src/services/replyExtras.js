@@ -60,6 +60,14 @@ function matchChoice(field, message) {
   return match ? match.value : null;
 }
 
+// Whether this turn gave a knowledge-base answer: the conversation has just
+// started waiting on one, or was already and has been given another (a
+// suggested follow-up question, answered in turn).
+function isNewAnswer(before, after) {
+  if (after?.kb_state !== 'awaiting_feedback') return false;
+  return before?.kb_state !== 'awaiting_feedback' || (before.kb_answers || 0) !== (after.kb_answers || 0);
+}
+
 function chipsFor(after, { startChips, handoffChip }) {
   if (startChips) return startChips;
 
@@ -92,11 +100,14 @@ function buildExtras(before, after, { startChips = null, handoffChip = null } = 
     extras.ticket = { id: after.ticket_id, summary: after.summary };
   }
 
-  // The articles an answer came from, shown under it so the customer can tell
-  // it is the company's own help text rather than something made up.
-  if (before?.kb_state !== 'awaiting_feedback' && after?.kb_state === 'awaiting_feedback') {
+  // The articles an answer came from, with the words it rests on, shown under
+  // it so the customer can tell it is the company's own help text rather than
+  // something made up - and questions the same articles answer, to ask next.
+  if (isNewAnswer(before, after)) {
     const sources = parseList(after.kb_sources);
     if (sources.length > 0) extras.sources = sources;
+    const followUps = parseList(after.kb_follow_ups);
+    if (followUps.length > 0) extras.followUps = followUps;
   }
 
   const chips = after ? chipsFor(after, { startChips, handoffChip }) : [];
@@ -105,4 +116,4 @@ function buildExtras(before, after, { startChips = null, handoffChip = null } = 
   return extras;
 }
 
-module.exports = { buildExtras, matchChoice, nextQuestionField };
+module.exports = { buildExtras, matchChoice, nextQuestionField, isNewAnswer };

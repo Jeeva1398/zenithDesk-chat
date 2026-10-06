@@ -127,6 +127,8 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
   const [isSending, setIsSending] = useState(false);
   // What the bot is busy with while it works out a reply, e.g. 'searching'.
   const [sendingStage, setSendingStage] = useState(null);
+  // An answer's text while the bot is still writing it; null otherwise.
+  const [streamingText, setStreamingText] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -241,7 +243,9 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
       setIsSending(true);
 
       try {
-        const reply = await api.sendMessageStreamed(targetSessionId, text, setSendingStage);
+        const reply = await api.sendMessageStreamed(targetSessionId, text, setSendingStage, (written) =>
+          setStreamingText(written || null),
+        );
         // null when the message went to a person, whose answer comes by poll.
         if (reply.reply !== null && reply.reply !== undefined) {
           appendMessage({
@@ -250,6 +254,7 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
             ticket: reply.ticket,
             chips: reply.chips,
             sources: reply.sources,
+            followUps: reply.followUps,
             serverId: reply.messageId,
           });
           rememberConversation(targetSessionId, reply.reply);
@@ -261,6 +266,7 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
       } finally {
         setIsSending(false);
         setSendingStage(null);
+        setStreamingText(null);
       }
     },
     [api, appendMessage, rememberConversation],
@@ -400,6 +406,7 @@ function useChatSession({ api, widgetKey, greeting, startChips = DEFAULT_START_C
     isLoadingHistory,
     isSending,
     sendingStage,
+    streamingText,
     isUploading,
     error,
   };

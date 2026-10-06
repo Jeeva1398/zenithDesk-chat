@@ -1,4 +1,5 @@
 const ticketApiClient = require('./ticketApiClient');
+const { isNewAnswer } = require('./replyExtras');
 const logger = require('../utils/logger');
 
 // Tells the main app what happens in conversations, for the Chatbot tab on
@@ -52,7 +53,7 @@ function eventsForTurn(before, after, message, { isFirst }) {
   if (isFirst) events.push({ type: 'conversation' });
   if (!after) return events;
 
-  if (before?.kb_state !== 'awaiting_feedback' && after.kb_state === 'awaiting_feedback') {
+  if (isNewAnswer(before, after)) {
     events.push({ type: 'kb_answered', detail: message });
   }
   if (before?.kb_state === 'awaiting_feedback' && after.kb_state !== 'awaiting_feedback') {

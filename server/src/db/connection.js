@@ -34,6 +34,8 @@ const NEW_CONVERSATION_COLUMNS = {
   kb_state: 'TEXT',
   kb_outcome: 'TEXT',
   kb_sources: 'TEXT',
+  kb_follow_ups: 'TEXT',
+  kb_answers: 'INTEGER',
   flow: 'TEXT',
   enquiry_state: 'TEXT',
   enquiry_message: 'TEXT',
