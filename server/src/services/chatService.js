@@ -151,18 +151,21 @@ async function submitTicket(sessionId, conversation, widgetKey) {
   return reply(sessionId, text);
 }
 
-// Which flow a first message starts, given what the org has turned on.
-// 'status' and 'out' are one-turn answers; the rest are stored on the
-// conversation. A sales question in an org without enquiries is still a
-// question - the knowledge base, then a ticket, as it always was.
-function flowForIntent(intent, purposes) {
+// Which flow a first message starts, given what the bot does. 'status' and
+// 'out' are one-turn answers; the rest are stored on the conversation. A sales
+// question in an org without enquiries is still a question - the knowledge
+// base, then a ticket, as it always was. Without Desk a problem is a question
+// too: the knowledge base, then a message for the team.
+function flowForIntent(intent, { purposes, messages }) {
   switch (intent) {
     case 'check_status':
       return purposes.status ? 'status' : 'out';
     case 'enquiry':
       return purposes.enquiry ? 'enquiry' : 'question';
     case 'create_ticket':
-      return purposes.support ? 'support' : 'out';
+      return purposes.support ? 'support' : messages ? 'question' : 'out';
+    case 'message':
+      return messages ? 'message' : 'question';
     default:
       return 'question';
   }
@@ -179,6 +182,15 @@ function outOfScope(sessionId, widget, prefix = '') {
   return replyWithStartChips(sessionId, botConfig.outOfScopeFor(widget, prefix));
 }
 
+// A question the bot could not answer, in an org without tickets to raise for
+// it: someone from the team when the org hands chats to people, otherwise a
+// message for them. Either way the question goes with it.
+function passOn(sessionId, bot, question, { afterAnswer = false } = {}) {
+  if (bot.handoff.enabled) return enquiryFlow.offer(sessionId, question, { afterAnswer });
+  conversationStore.setFlow(sessionId, 'enquiry');
+  return enquiryFlow.startFromQuestion(sessionId, question, { afterAnswer, kind: 'message' });
+}
+
 // widget is the resolved widget the message came through: its key, which the
 // main app finds the org from, that org, for the OTP calls that take it, and
 // the bot settings that decide which of the flows below are open.
@@ -191,7 +203,8 @@ async function sendMessage(sessionId, message, clientIp, widget) {
   conversationStore.bindWidget(sessionId, widget.publicKey);
   conversationStore.appendMessage(sessionId, 'user', message);
 
-  const { purposes, companyDescription, handoff } = botConfig.botOf(widget);
+  const bot = botConfig.botOf(widget);
+  const { purposes, companyDescription, handoff } = bot;
   let existing = conversationStore.getConversationSummary(sessionId);
 
   // While a person has the conversation, the bot stays out of it. A chat that
@@ -206,7 +219,7 @@ async function sendMessage(sessionId, message, clientIp, widget) {
   // Asking for a person works from anywhere in a conversation. Whatever the
   // bot was in the middle of is still there when the chat ends.
   if (handoff.enabled && handoffFlow.wantsPerson(message)) {
-    const { text, offerStart } = await handoffFlow.start(sessionId, widget, clientIp);
+    const { text, offerStart } = await handoffFlow.start(sessionId, widget, clientIp, existing);
     return offerStart ? replyWithStartChips(sessionId, text) : reply(sessionId, text);
   }
 
@@ -257,6 +270,10 @@ async function sendMessage(sessionId, message, clientIp, widget) {
         { afterAnswer: true },
       );
     }
+    if (!target && bot.messages) {
+      const question = questionForEscalation(conversationStore.getHistory(sessionId), message);
+      return passOn(sessionId, bot, question, { afterAnswer: true });
+    }
     if (!target) {
       return outOfScope(sessionId, widget, "Sorry that didn't help.");
     }
@@ -281,7 +298,7 @@ async function sendMessage(sessionId, message, clientIp, widget) {
   if (!conversationAlreadyStarted && !escalatedFromKnowledge) {
     const intent =
       botConfig.chipIntent(message) || (await intentRouter.classifyIntent(message, { companyDescription }));
-    flow = flowForIntent(intent, purposes);
+    flow = flowForIntent(intent, bot);
     logger.info(`Session ${sessionId}: intent=${intent} flow=${flow}`);
 
     if (flow === 'status') return ticketStatusFlow.start(sessionId);
@@ -301,6 +318,9 @@ async function sendMessage(sessionId, message, clientIp, widget) {
   if (flow === 'enquiry') {
     return enquiryFlow.start(sessionId, message, { vague: isVague(message) });
   }
+  if (flow === 'message') {
+    return enquiryFlow.start(sessionId, message, { vague: isVague(message), kind: 'message' });
+  }
 
   // A question the knowledge base could not answer: a ticket when the org
   // takes them (as it always did), otherwise an enquiry for the team to pick
@@ -311,6 +331,7 @@ async function sendMessage(sessionId, message, clientIp, widget) {
       conversationStore.setFlow(sessionId, 'enquiry');
       return enquiryFlow.startFromQuestion(sessionId, message);
     }
+    if (bot.messages) return passOn(sessionId, bot, message);
     return outOfScope(sessionId, widget, NO_ANSWER);
   }
 
