@@ -20,10 +20,31 @@ function requireSessionId(sessionId) {
   return sessionId;
 }
 
+// A page that loaded the widget is reported to the main app, which shows it as
+// installed. Once per site every so often is plenty: the checklist wants the
+// first one, and "last seen" need not be to the second.
+const SEEN_REPORT_INTERVAL_MS = 15 * 60 * 1000;
+const lastSeenReport = new Map();
+
+function reportSeen(widget, origin) {
+  if (!origin) return;
+  const key = `${widget.publicKey} ${origin}`;
+  const now = Date.now();
+  if (now - (lastSeenReport.get(key) || 0) < SEEN_REPORT_INTERVAL_MS) return;
+  lastSeenReport.set(key, now);
+  ticketApiClient.reportSeen(widget.publicKey, origin).catch((err) => {
+    // An outage is tried again on a later load rather than waiting out the
+    // interval; a refusal (a site allowed only by ALLOW_ANY_SITE) is not.
+    if (!err.status || err.status >= 500) lastSeenReport.delete(key);
+    logger.warn(`Reporting the widget seen on ${origin} failed: ${err.message}`);
+  });
+}
+
 const getConfig = catchAsync(async (req, res) => {
   // Short enough that a Settings change shows up on the next page load or so,
   // long enough that a visitor clicking around the site is not refetching it.
   res.set('Cache-Control', 'public, max-age=60');
+  reportSeen(req.widget, req.get('origin'));
   res.json(toPublicConfig(req.widget));
 });
 
