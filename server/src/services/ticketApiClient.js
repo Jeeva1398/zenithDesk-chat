@@ -183,7 +183,26 @@ async function reportChatbotEvents(widgetKey, events) {
   }
 }
 
+// Tells the main app a page on one of the org's sites loaded the widget, which
+// is how its setup checklist knows the snippet is installed.
+async function reportSeen(widgetKey, origin) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${TICKET_API_BASE_URL}/chat-widget/seen`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(widgetKey) },
+      signal: controller.signal,
+      body: JSON.stringify({ origin }),
+    });
+    if (!res.ok) throw new TicketApiError(res.status, `Widget seen report failed: ${res.status}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 module.exports = {
+  reportSeen,
   createTicket,
   reportChatbotEvents,
   createEnquiry,
