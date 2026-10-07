@@ -7,6 +7,10 @@
 // confirmation by matching its wording - which broke the moment anyone
 // reworded that sentence.
 
+const { CHIPS } = require('./botConfig');
+
+const LEAVE_MESSAGE_CHIP = CHIPS.message;
+
 const CATEGORY_CHOICES = [
   { label: 'Billing', value: 'billing' },
   { label: 'Technical', value: 'technical' },
@@ -70,6 +74,12 @@ function isNewAnswer(before, after) {
 
 function chipsFor(after, { startChips, handoffChip }) {
   if (startChips) return startChips;
+
+  // A question the bot could not answer, for someone from the team or a
+  // message for them - the person only while one can be asked for.
+  if (after.enquiry_state === 'offered') {
+    return handoffChip ? [handoffChip, LEAVE_MESSAGE_CHIP] : [LEAVE_MESSAGE_CHIP];
+  }
 
   // An answer that did not help is where a visitor most often wants a person.
   if (after.kb_state === 'awaiting_feedback') {
