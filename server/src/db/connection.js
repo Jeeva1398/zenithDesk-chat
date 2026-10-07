@@ -44,6 +44,7 @@ const NEW_CONVERSATION_COLUMNS = {
   enquiry_phone: 'TEXT',
   enquiry_company: 'TEXT',
   enquiry_id: 'TEXT',
+  enquiry_kind: 'TEXT',
   handoff_state: 'TEXT',
   live_chat_id: 'TEXT',
   live_chat_last_id: 'INTEGER',

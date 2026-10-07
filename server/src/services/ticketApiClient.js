@@ -49,7 +49,7 @@ class TicketApiError extends Error {
   }
 }
 
-async function createEnquiry(widgetKey, { name, email, phone, company, message, source }) {
+async function createEnquiry(widgetKey, { name, email, phone, company, message, source, kind }) {
   progress('sending');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -62,7 +62,7 @@ async function createEnquiry(widgetKey, { name, email, phone, company, message, 
         ...authHeaders(widgetKey),
       },
       signal: controller.signal,
-      body: JSON.stringify({ name, email, phone, company, message, source }),
+      body: JSON.stringify({ name, email, phone, company, message, source, kind }),
     });
 
     if (!res.ok) {

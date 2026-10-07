@@ -133,7 +133,7 @@ function getConversationSummary(sessionId) {
       `SELECT status, ticket_id, category, priority, summary, description, needs_more_info, missing_fields, awaiting_contact,
               lookup_state, kb_state, kb_outcome, kb_sources, kb_follow_ups, kb_answers, customer_email, customer_jwt, customer_jwt_expires_at, last_shown_ticket_ids,
               flow, enquiry_state, enquiry_message, enquiry_name, enquiry_email, enquiry_phone, enquiry_company, enquiry_id,
-              handoff_state, live_chat_id, live_chat_last_id, live_chat_agent
+              enquiry_kind, handoff_state, live_chat_id, live_chat_last_id, live_chat_agent
        FROM conversations WHERE session_id = ?`,
     )
     .get(sessionId);
@@ -257,6 +257,7 @@ const ENQUIRY_COLUMNS = {
   phone: 'enquiry_phone',
   company: 'enquiry_company',
   id: 'enquiry_id',
+  kind: 'enquiry_kind',
 };
 
 // Sets any of the enquiry fields; the ones not passed are left as they are.

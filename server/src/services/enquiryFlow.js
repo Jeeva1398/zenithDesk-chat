@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const conversationStore = require('./conversationStore');
 const ticketApiClient = require('./ticketApiClient');
+const botConfig = require('./botConfig');
 const llmClient = require('./llmClient');
 const { extractEmail } = require('../utils/emailPattern');
 const logger = require('../utils/logger');
@@ -10,7 +11,12 @@ const logger = require('../utils/logger');
 // company is asked for alongside but never chased. The main app checks all of
 // it again when the enquiry is filed.
 //
-// enquiry_state: awaiting_need -> awaiting_contact -> done
+// The same flow takes down a message: a question the bot of an org without
+// Desk could not answer, left for the team where it would otherwise raise a
+// ticket (enquiry_kind 'message'; anything else is a lead). When the org also
+// hands chats to people, the visitor is first offered the choice.
+//
+// enquiry_state: [offered ->] awaiting_need -> awaiting_contact -> done
 
 const ASK_NEED = 'Sure! What would you like to know? Tell me a little about what you are looking for.';
 const CONTACT_REQUEST =
@@ -24,6 +30,14 @@ const CONTACT_AFTER_DETAILS =
 const ASK_NAME = "Thanks — and what's your name?";
 const SUBMIT_FAILED = "Sorry, I wasn't able to send your enquiry just now — please try again in a moment.";
 const ALREADY_SENT = 'Our team already has your enquiry and will get back to you soon.';
+const ASK_MESSAGE = 'Sure — what would you like to tell the team?';
+const MESSAGE_CONTACT_REQUEST =
+  'Thanks! Who should the team get back to? Please share your name and an email or phone number.';
+const OFFER = "I don't have that answer here. I can connect you with someone from the team, or take a message for them.";
+const OFFER_AFTER_ANSWER =
+  "Sorry that didn't cover it. I can connect you with someone from the team, or take a message for them.";
+const MESSAGE_ALREADY_SENT = 'The team already has your message and will get back to you soon.';
+const LEAVE_MESSAGE_PATTERN = /\b(leave|take|send)\s+(a\s+|my\s+)?message\b/i;
 
 const MIN_PHONE_DIGITS = 6;
 // A run of digits with the usual separators, long enough to be a phone number
@@ -125,21 +139,55 @@ function firstName(name) {
 // Starts an enquiry from the visitor's first real message. A bare "I have an
 // enquiry" (or the chip) has nothing to pass on yet, so the need is asked for
 // first.
-function start(sessionId, message, { vague }) {
+function start(sessionId, message, { vague, kind = 'lead' }) {
   conversationStore.setFlow(sessionId, 'enquiry');
+  const isMessage = kind === 'message';
   if (vague) {
-    conversationStore.updateEnquiry(sessionId, { state: 'awaiting_need' });
-    return reply(sessionId, ASK_NEED);
+    conversationStore.updateEnquiry(sessionId, { state: 'awaiting_need', kind });
+    return reply(sessionId, isMessage ? ASK_MESSAGE : ASK_NEED);
   }
-  conversationStore.updateEnquiry(sessionId, { state: 'awaiting_contact', message: message.slice(0, MAX_MESSAGE_CHARS) });
-  return reply(sessionId, CONTACT_REQUEST);
+  conversationStore.updateEnquiry(sessionId, {
+    state: 'awaiting_contact',
+    message: message.slice(0, MAX_MESSAGE_CHARS),
+    kind,
+  });
+  return reply(sessionId, isMessage ? MESSAGE_CONTACT_REQUEST : CONTACT_REQUEST);
 }
 
 // A question the knowledge base could not answer - or answered, but not well
-// enough (afterAnswer) - passed on as an enquiry.
-function startFromQuestion(sessionId, question, { afterAnswer = false } = {}) {
-  conversationStore.updateEnquiry(sessionId, { state: 'awaiting_contact', message: question.slice(0, MAX_MESSAGE_CHARS) });
+// enough (afterAnswer) - passed on as an enquiry, or as a message.
+function startFromQuestion(sessionId, question, { afterAnswer = false, kind = 'lead' } = {}) {
+  conversationStore.updateEnquiry(sessionId, {
+    state: 'awaiting_contact',
+    message: question.slice(0, MAX_MESSAGE_CHARS),
+    kind,
+  });
   return reply(sessionId, afterAnswer ? CONTACT_AFTER_ANSWER : CONTACT_FROM_QUESTION);
+}
+
+// The same question when someone could also be asked to join: the visitor
+// picks. The question is kept, so either way it is not asked again. Asking for
+// a person is answered before this flow sees the message; anything else here
+// goes on as the message.
+function offer(sessionId, question, { afterAnswer = false } = {}) {
+  conversationStore.setFlow(sessionId, 'enquiry');
+  conversationStore.updateEnquiry(sessionId, {
+    state: 'offered',
+    message: question.slice(0, MAX_MESSAGE_CHARS),
+    kind: 'message',
+  });
+  return reply(sessionId, afterAnswer ? OFFER_AFTER_ANSWER : OFFER);
+}
+
+// Drops an offer the visitor answered by asking for a person, so what they say
+// after the chat is not taken for their contact details.
+function withdrawOffer(sessionId, conversation) {
+  if (conversation?.enquiry_state !== 'offered') return;
+  conversationStore.updateEnquiry(sessionId, { state: null, message: null, kind: null });
+}
+
+function wantsToLeaveMessage(message) {
+  return message.trim().toLowerCase() === botConfig.CHIPS.message.toLowerCase() || LEAVE_MESSAGE_PATTERN.test(message);
 }
 
 function nextContactQuestion(known) {
@@ -148,6 +196,7 @@ function nextContactQuestion(known) {
 }
 
 async function submit(sessionId, known, widget) {
+  const isMessage = known.kind === 'message';
   try {
     const enquiry = await ticketApiClient.createEnquiry(widget.publicKey, {
       name: known.name,
@@ -155,12 +204,15 @@ async function submit(sessionId, known, widget) {
       phone: known.phone || undefined,
       company: known.company || undefined,
       message: known.message,
+      // Only a message says what it is, so a lead reads the same to a main app
+      // from before messages existed.
+      kind: isMessage ? 'message' : undefined,
     });
     conversationStore.updateEnquiry(sessionId, { state: 'done', id: String(enquiry.id) });
     const via = known.email || known.phone;
     return reply(
       sessionId,
-      `Thanks, ${firstName(known.name)}! I've passed your enquiry to our team — they'll get back to you at ${via}.`,
+      `Thanks, ${firstName(known.name)}! I've passed your ${isMessage ? 'message' : 'enquiry'} to our team — they'll get back to you at ${via}.`,
     );
   } catch (err) {
     logger.warn(`Enquiry API call failed: ${err.message}`);
@@ -185,14 +237,24 @@ function knownFrom(conversation) {
     email: conversation.enquiry_email,
     phone: conversation.enquiry_phone,
     company: conversation.enquiry_company,
+    kind: conversation.enquiry_kind || 'lead',
   };
 }
 
 const isComplete = (known) => Boolean(known.name && (known.email || known.phone) && known.message);
 
-async function handle(sessionId, message, conversation, widget) {
+async function handle(sessionId, message, current, widget) {
+  let conversation = current;
   if (conversation.enquiry_state === 'done') {
-    return reply(sessionId, ALREADY_SENT);
+    return reply(sessionId, conversation.enquiry_kind === 'message' ? MESSAGE_ALREADY_SENT : ALREADY_SENT);
+  }
+
+  if (conversation.enquiry_state === 'offered') {
+    conversationStore.updateEnquiry(sessionId, { state: 'awaiting_contact' });
+    if (wantsToLeaveMessage(message)) return reply(sessionId, MESSAGE_CONTACT_REQUEST);
+    // Anything else is taken as the message's contact details, or more to go
+    // with it - handled below like any other reply.
+    conversation = { ...conversation, enquiry_state: 'awaiting_contact' };
   }
 
   if (conversation.enquiry_state === 'awaiting_need') {
@@ -200,7 +262,7 @@ async function handle(sessionId, message, conversation, widget) {
       state: 'awaiting_contact',
       message: appendToMessage(conversation.enquiry_message, message),
     });
-    return reply(sessionId, CONTACT_REQUEST);
+    return reply(sessionId, conversation.enquiry_kind === 'message' ? MESSAGE_CONTACT_REQUEST : CONTACT_REQUEST);
   }
 
   const known = knownFrom(conversation);
@@ -241,4 +303,4 @@ async function handle(sessionId, message, conversation, widget) {
   return submit(sessionId, merged, widget);
 }
 
-module.exports = { start, startFromQuestion, handle, ruleBasedContact, findPhone };
+module.exports = { start, startFromQuestion, offer, withdrawOffer, handle, ruleBasedContact, findPhone };

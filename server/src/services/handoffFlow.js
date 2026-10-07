@@ -1,6 +1,7 @@
 const conversationStore = require('./conversationStore');
 const ticketApiClient = require('./ticketApiClient');
 const botConfig = require('./botConfig');
+const enquiryFlow = require('./enquiryFlow');
 const logger = require('../utils/logger');
 
 // Hands a conversation from the bot to a person on the org's team, and back.
@@ -14,6 +15,7 @@ const logger = require('../utils/logger');
 const WAITING =
   "I've asked someone from the team to join. They'll reply right here - you can keep typing in the meantime.";
 const NO_ONE_AVAILABLE = 'Sorry, no one from the team is available to chat right now.';
+const LEAVE_MESSAGE_INSTEAD = 'I can take a message for them instead.';
 const OPEN_FAILED = "Sorry, I couldn't reach the team just now - please try again in a moment.";
 const RELAY_FAILED = "Sorry, that message didn't reach the team - please send it again.";
 const MISSED = 'Sorry, no one was able to join the chat in time.';
@@ -54,15 +56,19 @@ function botReply(sessionId, text, widget) {
 // What the bot says when it takes back a chat no one joined: whatever else it
 // could do instead.
 function afterMissed(widget) {
-  const { purposes } = botConfig.botOf(widget);
-  if (purposes.support) return `${MISSED} I can raise a ticket so the team gets back to you by email.`;
-  if (purposes.enquiry) return `${MISSED} I can take your details so the team gets back to you.`;
+  const bot = botConfig.botOf(widget);
+  if (bot.purposes.support) return `${MISSED} I can raise a ticket so the team gets back to you by email.`;
+  if (bot.purposes.enquiry) return `${MISSED} I can take your details so the team gets back to you.`;
+  if (botConfig.leavesMessages(bot)) return `${MISSED} I can take a message so the team gets back to you.`;
   return `${MISSED} Please try again a little later.`;
 }
 
 // Returns { text } for the bot to say, with offerStart when the reply puts the
-// visitor back at the start.
-async function start(sessionId, widget, clientIp) {
+// visitor back at the start. conversation is where it stood before: a visitor
+// who was offered a person or a message, and picked the person, keeps the
+// message option if no one is free.
+async function start(sessionId, widget, clientIp, conversation = null) {
+  const offered = conversation?.enquiry_state === 'offered';
   const transcript = conversationStore
     .getHistory(sessionId, TRANSCRIPT_MESSAGES)
     .filter((m) => m.role === 'user' || m.role === 'assistant');
@@ -75,9 +81,11 @@ async function start(sessionId, widget, clientIp) {
       lastId: 0,
       agentName: chat.agent?.name || null,
     });
+    enquiryFlow.withdrawOffer(sessionId, conversation);
     logger.info(`Session ${sessionId}: handed to live chat #${chat.id}`);
     return { text: WAITING };
   } catch (err) {
+    if (err.status === 503 && offered) return { text: `${NO_ONE_AVAILABLE} ${LEAVE_MESSAGE_INSTEAD}` };
     if (err.status === 503) return { text: NO_ONE_AVAILABLE, offerStart: true };
     if (err.status === 409) return { text: botConfig.outOfScopeFor(widget), offerStart: true };
     logger.warn(`Opening a live chat for session ${sessionId} failed: ${err.message}`);
